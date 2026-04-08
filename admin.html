@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Mind Map — Admin</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap');
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+:root {
+  --bg: #060610;
+  --panel: #0a0b14;
+  --card: rgba(255,255,255,0.03);
+  --bdr: rgba(255,255,255,0.06);
+  --txt: #c8cad4;
+  --dim: #484b5e;
+  --bright: #eeeef2;
+  --green: #34d399;
+  --amber: #fbbf24;
+  --rose: #fb7185;
+  --purple: #a78bfa;
+  --blue: #60a5fa;
+  --cyan: #22d3ee;
+}
+
+body {
+  background: var(--bg);
+  color: var(--txt);
+  font-family: 'DM Sans', sans-serif;
+  padding: 32px;
+  min-height: 100vh;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+header .tag {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; font-weight: 400;
+  letter-spacing: 3px; text-transform: uppercase;
+  color: var(--green);
+}
+header h1 {
+  font-size: 22px; font-weight: 400;
+  color: var(--bright); letter-spacing: -0.3px;
+}
+#conn-status {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; color: var(--dim);
+}
+#conn-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--dim); transition: all .3s;
+}
+#conn-dot.on { background: var(--green); box-shadow: 0 0 8px rgba(52,211,153,0.5); }
+#conn-dot.err { background: var(--rose); box-shadow: 0 0 8px rgba(251,113,133,0.5); }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--bdr);
+  border-radius: 10px;
+  padding: 20px;
+}
+.card-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px; font-weight: 400;
+  letter-spacing: 2px; text-transform: uppercase;
+  color: var(--dim); margin-bottom: 12px;
+}
+.metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 5px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.02);
+}
+.metric-row:last-child { border-bottom: none; }
+.metric-key {
+  font-size: 12px; color: var(--dim);
+}
+.metric-val {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px; font-weight: 500;
+  color: var(--bright);
+  transition: color .3s;
+}
+.metric-val.warn { color: var(--amber); }
+.metric-val.bad { color: var(--rose); }
+.metric-val.good { color: var(--green); }
+
+/* Big number hero metrics */
+.hero {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.hero-num {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 36px; font-weight: 500;
+  color: var(--bright);
+  letter-spacing: -1px;
+  transition: color .3s;
+}
+.hero-unit {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; color: var(--dim);
+  letter-spacing: 0.5px;
+}
+.hero-sub {
+  font-size: 11px; color: var(--dim);
+}
+
+/* Timeline chart */
+.chart-wrap {
+  height: 80px;
+  position: relative;
+  margin-top: 12px;
+}
+canvas {
+  width: 100%; height: 100%;
+  display: block;
+}
+
+/* Last text */
+.last-text {
+  font-size: 12px; color: var(--txt);
+  line-height: 1.6;
+  max-height: 60px; overflow: hidden;
+  opacity: 0.7;
+}
+
+/* Session controls */
+.session-bar {
+  display: flex; align-items: center; gap: 16px;
+  margin-bottom: 24px;
+  padding: 18px 22px;
+  background: var(--panel);
+  border: 1px solid var(--bdr);
+  border-radius: 10px;
+}
+.session-info {
+  flex: 1;
+}
+.session-id {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px; font-weight: 500;
+  color: var(--bright);
+}
+.session-meta {
+  font-size: 11px; color: var(--dim);
+  margin-top: 2px;
+}
+.session-btn {
+  padding: 9px 18px;
+  background: transparent;
+  border: 1px solid var(--bdr);
+  border-radius: 6px;
+  color: var(--dim);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px; font-weight: 400;
+  letter-spacing: 1px; text-transform: uppercase;
+  cursor: pointer;
+  transition: all .2s;
+}
+.session-btn:hover {
+  border-color: rgba(255,255,255,0.15);
+  color: var(--txt);
+}
+.session-btn.primary {
+  border-color: var(--green);
+  color: var(--green);
+}
+.session-btn.primary:hover {
+  background: rgba(52,211,153,0.08);
+}
+.session-btn.danger {
+  border-color: var(--rose);
+  color: var(--rose);
+}
+.session-btn.danger:hover {
+  background: rgba(251,113,133,0.08);
+}
+.session-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.session-toast {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--green);
+  opacity: 0;
+  transition: opacity .3s;
+}
+.session-toast.show { opacity: 1; }
+
+.admin-nav {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--bdr);
+}
+.nav-back {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--dim);
+  text-decoration: none;
+  transition: color .2s;
+}
+.nav-back:hover { color: var(--green); }
+.nav-tabs {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.nav-tab {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--dim);
+  text-decoration: none;
+  padding: 6px 14px;
+  border: 1px solid var(--bdr);
+  border-radius: 100px;
+  transition: all .2s;
+}
+.nav-tab:hover { border-color: var(--green); color: var(--green); }
+.nav-tab.active { border-color: var(--green); color: var(--green); background: rgba(52,211,153,0.06); }
+</style>
+</head>
+<body>
+
+<nav class="admin-nav">
+  <a href="/" class="nav-back">&larr; Mind Map</a>
+  <div class="nav-tabs">
+    <a href="/admin" class="nav-tab active">Live Dashboard</a>
+    <a href="/admin/sessions" class="nav-tab">Sessions</a>
+  </div>
+</nav>
+
+<header>
+  <div class="tag">Admin</div>
+  <h1>Live Mind Map Monitor</h1>
+  <div id="conn-status">
+    <div id="conn-dot"></div>
+    <span id="conn-label">Connecting...</span>
+  </div>
+</header>
+
+<div class="session-bar">
+  <div class="session-info">
+    <div class="session-id" id="s-id">No active session</div>
+    <div class="session-meta" id="s-meta"></div>
+  </div>
+  <span class="session-toast" id="s-toast"></span>
+  <button class="session-btn primary" id="btn-new-session">New Session</button>
+  <button class="session-btn danger" id="btn-end-session">End Session</button>
+</div>
+
+<div class="session-bar" style="gap:12px;">
+  <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+    <span class="card-label" style="margin-bottom:0;white-space:nowrap;">LLM</span>
+    <select id="llm-select" style="
+      background:var(--bg); color:var(--bright); border:1px solid var(--bdr);
+      border-radius:6px; padding:7px 12px; font-family:'IBM Plex Mono',monospace;
+      font-size:12px; min-width:260px; cursor:pointer; outline:none;
+    ">
+      <option value="">Loading models...</option>
+    </select>
+  </div>
+  <span id="llm-active" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--green);"></span>
+  <span class="session-toast" id="llm-toast"></span>
+
+  <div style="width:1px;height:24px;background:var(--bdr);margin:0 4px;"></div>
+
+  <div style="display:flex;align-items:center;gap:8px;min-width:0;">
+    <span class="card-label" style="margin-bottom:0;white-space:nowrap;">STT</span>
+    <select id="stt-select" style="
+      background:var(--bg); color:var(--bright); border:1px solid var(--bdr);
+      border-radius:6px; padding:7px 12px; font-family:'IBM Plex Mono',monospace;
+      font-size:12px; min-width:200px; cursor:pointer; outline:none;
+    ">
+      <option value="">Loading...</option>
+    </select>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;min-width:0;">
+    <span class="card-label" style="margin-bottom:0;white-space:nowrap;">Lang</span>
+    <select id="stt-lang" style="
+      background:var(--bg); color:var(--bright); border:1px solid var(--bdr);
+      border-radius:6px; padding:7px 10px; font-family:'IBM Plex Mono',monospace;
+      font-size:12px; cursor:pointer; outline:none;
+    ">
+      <option value="">Auto-detect</option>
+      <option value="en">English</option>
+      <option value="fr">French</option>
+      <option value="de">German</option>
+      <option value="it">Italian</option>
+      <option value="es">Spanish</option>
+      <option value="pt">Portuguese</option>
+      <option value="sv">Swedish</option>
+      <option value="no">Norwegian</option>
+      <option value="da">Danish</option>
+      <option value="is">Icelandic</option>
+      <option value="fi">Finnish</option>
+    </select>
+  </div>
+  <span id="stt-active" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--green);"></span>
+  <span class="session-toast" id="stt-toast"></span>
+</div>
+
+<div class="grid">
+  <!-- STT Performance -->
+  <div class="card">
+    <div class="card-label">STT Performance</div>
+    <div class="hero">
+      <div class="hero-num" id="stt-duration">--</div>
+      <div class="hero-unit">sec / chunk</div>
+    </div>
+    <div class="hero-sub">Real-time factor: <span id="rt-factor">--</span>x (target &lt; 1.0x)</div>
+    <div class="chart-wrap"><canvas id="chart-stt"></canvas></div>
+  </div>
+
+  <!-- Audio Buffer -->
+  <div class="card">
+    <div class="card-label">Audio Buffer</div>
+    <div class="hero">
+      <div class="hero-num" id="buf-seconds">--</div>
+      <div class="hero-unit">sec buffered</div>
+    </div>
+    <div class="hero-sub">Lag behind real-time</div>
+    <div class="chart-wrap"><canvas id="chart-buf"></canvas></div>
+  </div>
+
+  <!-- LLM API -->
+  <div class="card">
+    <div class="card-label">LLM API</div>
+    <div class="hero">
+      <div class="hero-num" id="claude-duration">--</div>
+      <div class="hero-unit">sec / call</div>
+    </div>
+    <div class="hero-sub">Calls: <span id="claude-calls">0</span> &middot; Errors: <span id="claude-errors">0</span></div>
+    <div id="claude-last-error" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--rose);margin-top:8px;word-break:break-all;display:none;"></div>
+    <div class="chart-wrap"><canvas id="chart-claude"></canvas></div>
+  </div>
+
+  <!-- E2E Latency -->
+  <div class="card">
+    <div class="card-label">End-to-End Latency</div>
+    <div class="hero">
+      <div class="hero-num" id="e2e-duration">--</div>
+      <div class="hero-unit">sec (chunk grab → send)</div>
+    </div>
+    <div class="hero-sub">Avg: <span id="e2e-avg">--</span>s &middot; Tokenizer: <span id="tok-ms">--</span>ms</div>
+    <div class="chart-wrap"><canvas id="chart-e2e"></canvas></div>
+  </div>
+
+  <!-- Pipeline Stats -->
+  <div class="card">
+    <div class="card-label">Pipeline Stats</div>
+    <div class="metric-row">
+      <span class="metric-key">Chunks processed</span>
+      <span class="metric-val" id="m-processed">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Skipped (silent)</span>
+      <span class="metric-val" id="m-silent">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Skipped (catch-up)</span>
+      <span class="metric-val" id="m-catchup">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Partials emitted</span>
+      <span class="metric-val" id="m-partials">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Empty STT results</span>
+      <span class="metric-val" id="m-empty">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Tokenizer recreations</span>
+      <span class="metric-val" id="m-recreations">0</span>
+    </div>
+  </div>
+
+  <!-- System -->
+  <div class="card">
+    <div class="card-label">System</div>
+    <div class="metric-row">
+      <span class="metric-key">Uptime</span>
+      <span class="metric-val" id="m-uptime">--</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">WebSocket clients</span>
+      <span class="metric-val" id="m-clients">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Audio RMS (live)</span>
+      <span class="metric-val" id="m-rms">--</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">VAD state</span>
+      <span class="metric-val" id="m-vad">--</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Transcript queue</span>
+      <span class="metric-val" id="m-queue">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">STT avg duration</span>
+      <span class="metric-val" id="m-avg">--</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Circuit breaker</span>
+      <span class="metric-val" id="m-cb-state">--</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">CB consecutive failures</span>
+      <span class="metric-val" id="m-cb-failures">0</span>
+    </div>
+  </div>
+
+  <!-- Graph Churn -->
+  <div class="card">
+    <div class="card-label">Graph Churn</div>
+    <div class="metric-row">
+      <span class="metric-key">Nodes added / min</span>
+      <span class="metric-val" id="m-nodes-added">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Nodes removed / min</span>
+      <span class="metric-val" id="m-nodes-removed">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Edge churn / min</span>
+      <span class="metric-val" id="m-edge-churn">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Analysis queue depth</span>
+      <span class="metric-val" id="m-analysis-queue">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">WS reconnects</span>
+      <span class="metric-val" id="m-reconnects">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Restore time</span>
+      <span class="metric-val" id="m-restore-ms">--</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Frontend FPS</span>
+      <span class="metric-val" id="m-frontend-fps">--</span>
+    </div>
+  </div>
+</div>
+
+<!-- Last transcription -->
+<div class="card" style="margin-bottom:24px;">
+  <div class="card-label">Last STT Output</div>
+  <div class="last-text" id="last-text">Waiting for data...</div>
+</div>
+
+<!-- FinOps widget -->
+<div style="position:fixed;bottom:20px;right:20px;z-index:100;">
+  <div class="card" style="min-width:240px;background:rgba(10,11,20,0.95);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);">
+    <div class="card-label" style="display:flex;align-items:center;gap:6px;">
+      <span style="color:var(--green);font-size:7px;">$</span> FinOps
+    </div>
+    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;">
+      <span id="fo-cost" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:500;color:var(--bright);letter-spacing:-1px;">$0.00</span>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--dim);">session</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Input tokens</span>
+      <span class="metric-val" id="fo-input-tok">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Output tokens</span>
+      <span class="metric-val" id="fo-output-tok">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Cost / call</span>
+      <span class="metric-val" id="fo-per-call">--</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Cost / min</span>
+      <span class="metric-val" id="fo-per-min">--</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Parse OK / fail</span>
+      <span class="metric-val" id="fo-parse">0 / 0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-key">Provider</span>
+      <span class="metric-val" id="fo-provider" style="font-size:10px;">--</span>
+    </div>
+  </div>
+</div>
+
+<script>
+const WS_URL = 'ws://localhost:8765/ws';
+const POLL_MS = 1000;
+const HISTORY = 60; // data points in charts
+
+// Chart data
+const sttHistory = [];
+const bufHistory = [];
+const claudeHistory = [];
+const e2eHistory = [];
+
+let ws = null;
+let pollTimer = null;
+
+function connect() {
+  ws = new WebSocket(WS_URL);
+  const dot = document.getElementById('conn-dot');
+  const label = document.getElementById('conn-label');
+
+  ws.onopen = () => {
+    dot.className = 'on';
+    label.textContent = 'Connected';
+    pollTimer = setInterval(() => {
+      if (ws.readyState === 1) ws.send(JSON.stringify({type: 'get_metrics'}));
+    }, POLL_MS);
+  };
+
+  ws.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.type === 'metrics') update(d);
+  };
+
+  ws.onclose = () => {
+    dot.className = 'err';
+    label.textContent = 'Disconnected — retrying...';
+    clearInterval(pollTimer);
+    setTimeout(connect, 3000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+function update(m) {
+  // Session info
+  const sid = m.current_session_id || null;
+  if (sid) {
+    currentSessionId = sid;
+    document.getElementById('s-id').textContent = 'Session: ' + sid;
+    const nodes = m.active_nodes || 0;
+    document.getElementById('s-meta').textContent = nodes + ' active nodes';
+  } else {
+    document.getElementById('s-id').textContent = 'No active session';
+    document.getElementById('s-meta').textContent = '';
+  }
+
+  const chunkSec = m.chunk_seconds || 2;
+
+  // STT duration hero
+  const dur = m.stt_last_duration || 0;
+  const rtf = dur / chunkSec;
+  document.getElementById('stt-duration').textContent = dur.toFixed(2);
+  const sttEl = document.getElementById('stt-duration');
+  sttEl.className = 'hero-num' + (rtf > 1.2 ? ' bad' : rtf > 0.9 ? ' warn' : ' good');
+
+  document.getElementById('rt-factor').textContent = rtf.toFixed(2);
+  const rtfEl = document.getElementById('rt-factor');
+  rtfEl.style.color = rtf > 1.2 ? 'var(--rose)' : rtf > 0.9 ? 'var(--amber)' : 'var(--green)';
+
+  // Buffer hero
+  const buf = m.audio_buffer_seconds || 0;
+  document.getElementById('buf-seconds').textContent = buf.toFixed(1);
+  const bufEl = document.getElementById('buf-seconds');
+  bufEl.className = 'hero-num' + (buf > 6 ? ' bad' : buf > 3 ? ' warn' : ' good');
+
+  // Claude / LLM API
+  const cDur = m.claude_last_duration || 0;
+  document.getElementById('claude-duration').textContent = cDur.toFixed(2);
+  const cEl = document.getElementById('claude-duration');
+  cEl.className = 'hero-num' + (cDur > 8 ? ' bad' : cDur > 5 ? ' warn' : ' good');
+  document.getElementById('claude-calls').textContent = m.claude_calls || 0;
+  if (m.llm_provider && m.llm_model) {
+    document.getElementById('llm-active').textContent = m.llm_provider + '/' + m.llm_model;
+  }
+  if (m.stt_backend) {
+    document.getElementById('stt-active').textContent = m.stt_backend + (m.stt_remote_url ? ' (' + m.stt_remote_url + ')' : '');
+  }
+  const cerrEl = document.getElementById('claude-errors');
+  cerrEl.textContent = m.claude_errors || 0;
+  cerrEl.style.color = (m.claude_errors || 0) > 0 ? 'var(--rose)' : 'var(--dim)';
+  const errBox = document.getElementById('claude-last-error');
+  if (m.claude_last_error) { errBox.textContent = m.claude_last_error; errBox.style.display = 'block'; }
+  else { errBox.style.display = 'none'; }
+
+  // E2E latency
+  const e2e = m.stt_e2e_last || 0;
+  document.getElementById('e2e-duration').textContent = e2e.toFixed(2);
+  const e2eEl = document.getElementById('e2e-duration');
+  e2eEl.className = 'hero-num' + (e2e > chunkSec * 1.2 ? ' bad' : e2e > chunkSec ? ' warn' : ' good');
+  document.getElementById('e2e-avg').textContent = (m.stt_e2e_avg || 0).toFixed(2);
+  document.getElementById('tok-ms').textContent = (m.tokenizer_last_ms || 0).toFixed(0);
+
+  // Pipeline stats
+  document.getElementById('m-processed').textContent = m.chunks_processed || 0;
+  document.getElementById('m-silent').textContent = m.chunks_skipped_silent || 0;
+  const catchupEl = document.getElementById('m-catchup');
+  catchupEl.textContent = m.chunks_skipped_catchup || 0;
+  catchupEl.className = 'metric-val' + ((m.chunks_skipped_catchup || 0) > 0 ? ' warn' : '');
+  document.getElementById('m-partials').textContent = m.stt_partials_emitted || 0;
+  document.getElementById('m-empty').textContent = m.stt_empty_results || 0;
+  document.getElementById('m-recreations').textContent = m.tokenizer_recreations || 0;
+
+  // System
+  const up = m.uptime || 0;
+  const mins = Math.floor(up / 60);
+  const secs = Math.floor(up % 60);
+  document.getElementById('m-uptime').textContent = `${mins}m ${secs}s`;
+  document.getElementById('m-clients').textContent = m.ws_clients || 0;
+  const rms = m.audio_rms || 0;
+  const rmsEl = document.getElementById('m-rms');
+  rmsEl.textContent = rms.toFixed(4);
+  rmsEl.className = 'metric-val' + (rms < 0.01 ? ' warn' : ' good');
+  document.getElementById('m-queue').textContent = m.transcript_queue_size || 0;
+  document.getElementById('m-avg').textContent = (m.stt_avg_duration || 0).toFixed(2) + 's';
+  const cbState = m.cb_state || 'closed';
+  const cbEl = document.getElementById('m-cb-state');
+  cbEl.textContent = cbState;
+  cbEl.className = 'metric-val' + (cbState === 'closed' ? ' good' : cbState === 'open' ? ' warn' : '');
+  document.getElementById('m-cb-failures').textContent = m.cb_failures || 0;
+
+  // VAD state
+  const vadState = m.vad_state || 'unknown';
+  const vadEl = document.getElementById('m-vad');
+  vadEl.textContent = vadState;
+  vadEl.className = 'metric-val' + (vadState === 'speaking' ? ' good' : vadState === 'silent' ? ' warn' : '');
+
+  // Graph churn metrics
+  document.getElementById('m-nodes-added').textContent = m.nodes_added_per_min || 0;
+  document.getElementById('m-nodes-removed').textContent = m.nodes_removed_per_min || 0;
+  document.getElementById('m-edge-churn').textContent = m.edge_churn_per_min || 0;
+  document.getElementById('m-analysis-queue').textContent = m.analysis_queue_depth || 0;
+  document.getElementById('m-reconnects').textContent = m.ws_reconnects || 0;
+  const restoreMs = m.last_restore_ms || 0;
+  const restoreEl = document.getElementById('m-restore-ms');
+  restoreEl.textContent = restoreMs > 0 ? restoreMs.toFixed(0) + 'ms' : '--';
+  restoreEl.className = 'metric-val' + (restoreMs > 10000 ? ' bad' : restoreMs > 5000 ? ' warn' : restoreMs > 0 ? ' good' : '');
+  const feFps = m.frontend_fps || 0;
+  const fpsEl = document.getElementById('m-frontend-fps');
+  fpsEl.textContent = feFps > 0 ? feFps : '--';
+  fpsEl.className = 'metric-val' + (feFps > 0 && feFps < 30 ? ' bad' : feFps >= 30 && feFps < 50 ? ' warn' : feFps >= 50 ? ' good' : '');
+
+  // Last text
+  if (m.stt_last_text) {
+    document.getElementById('last-text').textContent = m.stt_last_text;
+  }
+
+  // Chart data
+  sttHistory.push(dur);
+  if (sttHistory.length > HISTORY) sttHistory.shift();
+  bufHistory.push(buf);
+  if (bufHistory.length > HISTORY) bufHistory.shift();
+  if (cDur > 0) { claudeHistory.push(cDur); if (claudeHistory.length > HISTORY) claudeHistory.shift(); }
+  e2eHistory.push(e2e);
+  if (e2eHistory.length > HISTORY) e2eHistory.shift();
+
+  drawChart('chart-stt', sttHistory, chunkSec, 'stt');
+  drawChart('chart-buf', bufHistory, chunkSec * 3, 'buf');
+  drawChart('chart-claude', claudeHistory, 5, 'claude');
+  drawChart('chart-e2e', e2eHistory, chunkSec, 'e2e');
+
+  // FinOps
+  const sessionCost = m.llm_session_cost || 0;
+  document.getElementById('fo-cost').textContent = '$' + sessionCost.toFixed(4);
+  document.getElementById('fo-cost').style.color = sessionCost > 1 ? 'var(--rose)' : sessionCost > 0.1 ? 'var(--amber)' : 'var(--green)';
+  const inTok = m.llm_input_tokens || 0;
+  const outTok = m.llm_output_tokens || 0;
+  document.getElementById('fo-input-tok').textContent = inTok.toLocaleString();
+  document.getElementById('fo-output-tok').textContent = outTok.toLocaleString();
+  const lastCost = m.llm_last_cost || 0;
+  document.getElementById('fo-per-call').textContent = lastCost > 0 ? '$' + lastCost.toFixed(5) : 'free';
+  const uptime = m.uptime || 1;
+  const costPerMin = sessionCost / (uptime / 60);
+  document.getElementById('fo-per-min').textContent = costPerMin > 0 ? '$' + costPerMin.toFixed(4) : 'free';
+  document.getElementById('fo-parse').textContent = (m.llm_parse_ok || 0) + ' / ' + (m.llm_parse_fail || 0);
+  const parseEl = document.getElementById('fo-parse');
+  parseEl.className = 'metric-val' + ((m.llm_parse_fail || 0) > (m.llm_parse_ok || 0) ? ' bad' : (m.llm_parse_fail || 0) > 0 ? ' warn' : ' good');
+  document.getElementById('fo-provider').textContent = (m.llm_provider || '') + '/' + (m.llm_model || '');
+}
+
+function drawChart(canvasId, data, threshold, type) {
+  const canvas = document.getElementById(canvasId);
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  if (data.length < 2) return;
+
+  const max = Math.max(threshold * 1.5, ...data) * 1.1;
+  const step = W / (HISTORY - 1);
+
+  // Threshold line
+  const thY = H - (threshold / max) * H;
+  ctx.strokeStyle = 'rgba(251,113,133,0.2)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(0, thY);
+  ctx.lineTo(W, thY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Threshold label
+  ctx.fillStyle = 'rgba(251,113,133,0.35)';
+  ctx.font = '9px IBM Plex Mono';
+  const thLabels = {stt: `${threshold}s (1:1)`, buf: `${threshold}s (skip)`, claude: `${threshold}s target`, e2e: `${threshold}s (chunk)`};
+  ctx.fillText(thLabels[type] || `${threshold}s`, 4, thY - 4);
+
+  // Data line
+  ctx.beginPath();
+  const offset = HISTORY - data.length;
+  for (let i = 0; i < data.length; i++) {
+    const x = (i + offset) * step;
+    const y = H - (data[i] / max) * H;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  const lineColors = {stt: 'rgba(167,139,250,0.7)', buf: 'rgba(96,165,250,0.7)', claude: 'rgba(52,211,153,0.7)', e2e: 'rgba(251,191,36,0.7)'};
+  const fillColors = {stt: 'rgba(167,139,250,0.06)', buf: 'rgba(96,165,250,0.06)', claude: 'rgba(52,211,153,0.06)', e2e: 'rgba(251,191,36,0.06)'};
+  ctx.strokeStyle = lineColors[type] || lineColors.stt;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Fill under
+  ctx.lineTo((data.length - 1 + offset) * step, H);
+  ctx.lineTo(offset * step, H);
+  ctx.closePath();
+  ctx.fillStyle = fillColors[type] || fillColors.stt;
+  ctx.fill();
+}
+
+// ─── Session controls ───
+const API_BASE = 'http://localhost:8765';
+let currentSessionId = null;
+
+function showToast(msg) {
+  const el = document.getElementById('s-toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+document.getElementById('btn-new-session').addEventListener('click', async () => {
+  if (!confirm('End the current session and start a fresh one?\nAll data from this session is archived.')) return;
+  const btn = document.getElementById('btn-new-session');
+  btn.disabled = true;
+  try {
+    const topic = prompt('Topic for new session (optional):', '') || '';
+    const resp = await fetch(API_BASE + '/v1/sessions/new', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({topic}),
+    });
+    const data = await resp.json();
+    currentSessionId = data.id;
+    showToast('New session started: ' + data.id);
+  } catch(e) {
+    showToast('Failed: ' + e.message);
+  }
+  btn.disabled = false;
+});
+
+document.getElementById('btn-end-session').addEventListener('click', async () => {
+  if (!currentSessionId) { showToast('No active session'); return; }
+  if (!confirm('End the current session and archive all data?\nThe mind map will go blank until a new session is created.')) return;
+  const btn = document.getElementById('btn-end-session');
+  btn.disabled = true;
+  try {
+    await fetch(API_BASE + '/v1/sessions/' + currentSessionId + '/end', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: '{}',
+    });
+    showToast('Session ' + currentSessionId + ' archived');
+    currentSessionId = null;
+    document.getElementById('s-id').textContent = 'No active session';
+    document.getElementById('s-meta').textContent = '';
+  } catch(e) {
+    showToast('Failed: ' + e.message);
+  }
+  btn.disabled = false;
+});
+
+// ─── LLM provider switcher ───
+async function loadLLMProviders() {
+  const sel = document.getElementById('llm-select');
+  const activeLabel = document.getElementById('llm-active');
+  try {
+    const resp = await fetch(API_BASE + '/v1/llm/providers');
+    const {providers, active} = await resp.json();
+
+    sel.innerHTML = '';
+    for (const [pid, prov] of Object.entries(providers)) {
+      if (!prov.available) continue;
+      const group = document.createElement('optgroup');
+      group.label = prov.label;
+      for (const m of prov.models) {
+        const opt = document.createElement('option');
+        opt.value = pid + '/' + m.id;
+        opt.textContent = m.label + (m.note ? ' (' + m.note + ')' : '');
+        if (pid === active.provider && m.id === active.model) opt.selected = true;
+        group.appendChild(opt);
+      }
+      sel.appendChild(group);
+    }
+
+    activeLabel.textContent = active.provider + '/' + active.model;
+  } catch(e) {
+    sel.innerHTML = '<option>Failed to load</option>';
+  }
+}
+
+document.getElementById('llm-select').addEventListener('change', async (e) => {
+  const val = e.target.value;
+  if (!val) return;
+  const [provider, ...modelParts] = val.split('/');
+  const model = modelParts.join('/');  // model IDs can contain /
+  const toast = document.getElementById('llm-toast');
+  try {
+    const resp = await fetch(API_BASE + '/v1/llm/active', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({provider, model}),
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      document.getElementById('llm-active').textContent = data.active.provider + '/' + data.active.model;
+      toast.textContent = 'Switched';
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2000);
+    } else {
+      toast.textContent = data.error || 'Failed';
+      toast.style.color = 'var(--rose)';
+      toast.classList.add('show');
+      setTimeout(() => { toast.classList.remove('show'); toast.style.color = ''; }, 3000);
+    }
+  } catch(err) {
+    toast.textContent = err.message;
+    toast.style.color = 'var(--rose)';
+    toast.classList.add('show');
+    setTimeout(() => { toast.classList.remove('show'); toast.style.color = ''; }, 3000);
+  }
+});
+
+loadLLMProviders();
+
+// ─── STT backend switcher ───
+async function loadSTTBackends() {
+  const sel = document.getElementById('stt-select');
+  const langSel = document.getElementById('stt-lang');
+  const activeLabel = document.getElementById('stt-active');
+  try {
+    const resp = await fetch(API_BASE + '/v1/stt/backends');
+    const {backends, active} = await resp.json();
+
+    sel.innerHTML = '';
+    for (const [bid, b] of Object.entries(backends)) {
+      if (!b.available) continue;
+      const opt = document.createElement('option');
+      opt.value = bid;
+      opt.textContent = b.label + (b.note ? ' — ' + b.note : '');
+      if (bid === active.backend) opt.selected = true;
+      sel.appendChild(opt);
+    }
+
+    // Set language dropdown
+    if (active.language) langSel.value = active.language;
+    activeLabel.textContent = active.backend + (active.language ? ' [' + active.language + ']' : ' [auto]');
+  } catch(e) {
+    sel.innerHTML = '<option>Failed to load</option>';
+  }
+}
+
+async function updateSTT(changes) {
+  const toast = document.getElementById('stt-toast');
+  try {
+    const resp = await fetch(API_BASE + '/v1/stt/active', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(changes),
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      const a = data.active;
+      document.getElementById('stt-active').textContent = a.backend + (a.language ? ' [' + a.language + ']' : ' [auto]');
+      toast.textContent = 'Updated';
+      toast.style.color = '';
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2000);
+    } else {
+      toast.textContent = data.error || 'Failed';
+      toast.style.color = 'var(--rose)';
+      toast.classList.add('show');
+      setTimeout(() => { toast.classList.remove('show'); toast.style.color = ''; }, 3000);
+    }
+  } catch(err) {
+    toast.textContent = err.message;
+    toast.style.color = 'var(--rose)';
+    toast.classList.add('show');
+    setTimeout(() => { toast.classList.remove('show'); toast.style.color = ''; }, 3000);
+  }
+}
+
+document.getElementById('stt-select').addEventListener('change', e => updateSTT({backend: e.target.value}));
+document.getElementById('stt-lang').addEventListener('change', e => updateSTT({language: e.target.value}));
+
+loadSTTBackends();
+
+connect();
+</script>
+</body>
+</html>

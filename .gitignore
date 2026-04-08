@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+livemind.db
+.env
+*.db-journal
+*.db-wal
