@@ -238,7 +238,7 @@ a:hover { text-decoration: underline; }
 <section id="overview">
 <h2>Overview</h2>
 
-<p>Mímir captures live speech, transcribes it, and builds an animated knowledge graph as people talk. It runs on the DGX Spark with all inference local — no data leaves the server.</p>
+<p>Mímir captures live speech, transcribes it, and builds an animated knowledge graph as people talk. All processing happens locally — no data leaves the system.</p>
 
 <p>There are three views, each for a different moment:</p>
 
@@ -330,7 +330,7 @@ a:hover { text-decoration: underline; }
 <h3>What to watch</h3>
 <ul>
   <li><strong>STT Latency:</strong> How long each audio chunk takes to transcribe. Under 2s is good. Over 5s means the STT is struggling.</li>
-  <li><strong>LLM Latency:</strong> How long graph analysis takes. Under 20s is normal. Over 40s may indicate GPU memory pressure — consider stopping unused services.</li>
+  <li><strong>LLM Latency:</strong> How long graph analysis takes. Under 20s is normal. Over 40s means the system is under load — notify the system administrator or switch to Gemini Flash (cloud) as fallback.</li>
   <li><strong>Circuit Breaker:</strong> Should say "closed". If it says "open", the LLM is failing and the system is backing off. Transcript keeps flowing, but the graph won't update until it recovers.</li>
   <li><strong>Graph (N / 24):</strong> How many nodes are active vs the 24-node budget. A full graph is fine — the reconciler manages it automatically.</li>
 </ul>
@@ -487,9 +487,9 @@ a:hover { text-decoration: underline; }
 <h3>Transcript appears but graph doesn't update</h3>
 <ul>
   <li>Check the LLM status dot in the monitor — amber means the circuit breaker is active</li>
-  <li>Check LLM Latency — if very high (>40s), the GPU may be under memory pressure. Stop unused STT backends: <code>docker stop canary-asr parakeet-asr</code></li>
   <li>The graph needs at least 50 characters of new text and waits 20 seconds between analyses</li>
   <li>Try switching to Gemini Flash (cloud) as LLM fallback in the monitor</li>
+  <li>If latency is consistently over 40s, notify the system administrator</li>
 </ul>
 
 <h3>STT quality is poor</h3>
@@ -501,9 +501,8 @@ a:hover { text-decoration: underline; }
 
 <h3>High LLM latency</h3>
 <ul>
-  <li>Check GPU memory usage: <code>nvidia-smi</code></li>
-  <li>Stop unused STT services to free GPU memory: <code>docker stop canary-asr</code></li>
-  <li>Switch to Gemini Flash (cloud) as LLM fallback if local inference is too slow</li>
+  <li>Switch to Gemini Flash (cloud) as LLM fallback — use the LLM picker in the monitor</li>
+  <li>If the problem persists, contact the system administrator — the server may need services rebalanced</li>
 </ul>
 
 <h3>Display shows "Waiting for session"</h3>
@@ -515,13 +514,13 @@ a:hover { text-decoration: underline; }
 
 <h3>WebSocket disconnects</h3>
 <ul>
-  <li>Both monitor and display auto-reconnect with exponential backoff</li>
-  <li>If the server restarts, all clients will reconnect automatically</li>
+  <li>Both monitor and display auto-reconnect automatically</li>
   <li>The display will restore the current session state on reconnect</li>
+  <li>If disconnects persist, check your network connection or contact the system administrator</li>
 </ul>
 
-<h3>Database</h3>
-<p>All data is in <code>livemind.db</code> (SQLite). To start completely fresh, stop the server, delete the file, and restart. A new database is created automatically. To keep session data but start with a clean active list, use the archive feature instead.</p>
+<h3>Data management</h3>
+<p>To keep the session list clean, use the <strong>Archive</strong> feature to move old sessions out of the active list. Archived sessions can be unarchived at any time. If you need a full database reset, contact the system administrator.</p>
 </section>
 
 <!-- ═══════════════════════════════════════ -->

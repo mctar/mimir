@@ -108,6 +108,18 @@ metrics = {
 }
 metrics_lock = threading.Lock()
 
+# Activity log for post-session operations (recap, clean, synthesis)
+_activity_log: list[dict] = []  # capped at 50 entries
+_activity_lock = threading.Lock()
+
+def log_activity(event_type: str, session_id: str = "", status: str = "started", detail: str = ""):
+    """Log a post-session operation (recap, clean-transcript, synthesis)."""
+    entry = {"type": event_type, "session_id": session_id, "status": status, "detail": detail, "timestamp": time.time()}
+    with _activity_lock:
+        _activity_log.append(entry)
+        if len(_activity_log) > 50:
+            _activity_log.pop(0)
+
 # Circuit breaker
 cb_state = "closed"
 cb_failures = 0
@@ -178,6 +190,10 @@ async def serve_monitor():
 async def serve_doc():
     return FileResponse(os.path.join(os.path.dirname(__file__), "doc.html"))
 
+@app.get("/doc/admin", response_class=HTMLResponse)
+async def serve_doc_admin():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "doc-admin.html"))
+
 @app.get("/sessions", response_class=HTMLResponse)
 async def serve_sessions():
     return FileResponse(os.path.join(os.path.dirname(__file__), "sessions.html"))
@@ -194,9 +210,9 @@ from starlette.responses import RedirectResponse
 async def redirect_admin_sessions():
     return RedirectResponse("/sessions")
 
-@app.get("/admin")
-async def redirect_admin():
-    return RedirectResponse("/sessions")
+@app.get("/admin", response_class=HTMLResponse)
+async def serve_admin():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "admin.html"))
 
 
 # ─── REST endpoints ───
@@ -409,8 +425,10 @@ async def get_session_detail(session_id: str):
 @app.post("/v1/sessions/{session_id}/recap")
 async def generate_recap(session_id: str):
     """Generate an AI recap for a session (on-demand, server-side LLM call)."""
+    log_activity("recap", session_id, "started")
     segments = await db.get_session_transcript(session_id)
     if not segments:
+        log_activity("recap", session_id, "error", "No transcript found")
         return JSONResponse({"error": "No transcript found"}, status_code=404)
 
     full_text = " ".join(seg.get("cleaned_text") or seg["text"] for seg in segments)
@@ -556,6 +574,7 @@ Rules:
             recap["transcript_stats"] = stats
 
             await db.store_recap(session_id, recap, model)
+            log_activity("recap", session_id, "completed", f"{len(segments)} segments, model={model}")
             return JSONResponse({"recap": recap, "model": model, "created_at": time.time()})
 
         except json.JSONDecodeError as e:
@@ -572,8 +591,10 @@ Rules:
                 "transcript_stats": stats,
             }
             await db.store_recap(session_id, error_recap, model)
+            log_activity("recap", session_id, "error", str(last_error))
             return JSONResponse({"error": f"Failed to parse LLM response: {last_error}"}, status_code=502)
         except Exception as e:
+            log_activity("recap", session_id, "error", str(e))
             return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
 
 
@@ -582,6 +603,7 @@ Rules:
 @app.post("/v1/sessions/{session_id}/clean-transcript")
 async def clean_transcript(session_id: str):
     """Clean transcript segments using LLM to fix obvious STT errors."""
+    log_activity("clean", session_id, "started")
     segments = await db.get_session_transcript(session_id)
     if not segments:
         return JSONResponse({"error": "No transcript found"}, status_code=404)
@@ -730,6 +752,8 @@ Rules:
     # Count how many actually changed
     changed = sum(1 for c, seg in zip(all_cleaned, segments) if c["cleaned_text"] != seg["text"])
 
+    log_activity("clean", session_id, "completed", f"{changed}/{len(segments)} changed, model={model}")
+
     return JSONResponse({
         "ok": True,
         "total_segments": len(segments),
@@ -743,6 +767,7 @@ Rules:
 @app.post("/v1/sessions/synthesis")
 async def generate_synthesis(request: Request):
     """Generate a cross-session synthesis recap from multiple sessions' individual recaps."""
+    log_activity("synthesis", "", "started")
     body = await request.json()
     session_ids = body.get("session_ids", [])
     if len(session_ids) < 2:
@@ -899,6 +924,7 @@ Rules:
         synthesis["session_count"] = len(session_ids)
 
         row_id = await db.store_synthesis(session_ids, synthesis, model)
+        log_activity("synthesis", ",".join(session_ids), "completed", f"{len(session_ids)} sessions, model={model}")
         return JSONResponse({
             "id": row_id,
             "session_ids": session_ids,
@@ -1594,6 +1620,8 @@ async def ws_endpoint(websocket: WebSocket):
                 stt = get_stt_config()
                 m["stt_backend"] = stt["backend"]
                 m["stt_remote_url"] = stt.get("remote_url", "")
+                with _activity_lock:
+                    m["activity_log"] = list(_activity_log[-20:])
                 await websocket.send_json({"type": "metrics", **m})
 
             elif msg_type == "claude_request":

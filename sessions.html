@@ -610,6 +610,22 @@ h1 {
 }
 .map-wrap.playback { border-radius: 8px 8px 0 0; }
 
+#tab-mindmap.fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: var(--bg);
+  display: block;
+  padding: 0;
+}
+#tab-mindmap.fullscreen .map-wrap {
+  height: calc(100vh - 50px);
+  border-radius: 0;
+}
+#tab-mindmap.fullscreen .pb-controls {
+  border-radius: 0;
+}
+
 /* ─── Export bar ─── */
 .export-bar {
   display: flex;
@@ -805,7 +821,7 @@ h1 {
   <div class="tabs">
     <button class="tab-btn active" data-tab="recap">Recap</button>
     <button class="tab-btn" data-tab="transcript">Transcript</button>
-    <button class="tab-btn" data-tab="mindmap">Mind Map</button>
+    <button class="tab-btn" data-tab="mindmap">Graph</button>
   </div>
 
   <!-- Recap Tab -->
@@ -851,6 +867,7 @@ h1 {
       </div>
       <span class="pb-frame" id="pb-frame">0 / 0</span>
       <button class="pb-speed" id="pb-speed" onclick="cycleSpeed()" title="Playback speed">5x</button>
+      <button class="pb-speed" onclick="toggleGraphFullscreen()" title="Fullscreen">&#x26F6;</button>
     </div>
   </div>
 
@@ -1848,6 +1865,26 @@ function updatePbDisplay() {
   document.getElementById('pb-time').textContent = fmtTime(PB.elapsed) + ' / ' + fmtTime(duration);
   document.getElementById('pb-frame').textContent = (PB.idx + 1) + ' / ' + PB.frames.length;
 }
+
+function toggleGraphFullscreen() {
+  const panel = document.getElementById('tab-mindmap');
+  panel.classList.toggle('fullscreen');
+  // Trigger resize so D3 recalculates
+  window.dispatchEvent(new Event('resize'));
+  if (PB.sim) PB.sim.alpha(0.3).restart();
+}
+
+// Exit fullscreen on Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const panel = document.getElementById('tab-mindmap');
+    if (panel.classList.contains('fullscreen')) {
+      panel.classList.remove('fullscreen');
+      window.dispatchEvent(new Event('resize'));
+      if (PB.sim) PB.sim.alpha(0.3).restart();
+    }
+  }
+});
 
 function cycleSpeed() {
   PB.speedIdx = (PB.speedIdx + 1) % SPEEDS.length;

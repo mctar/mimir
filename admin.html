@@ -3,24 +3,26 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Live Mind Map — Admin</title>
+<title>Mímir — System Monitor</title>
+<link rel="icon" type="image/svg+xml" href="/mimir-favicon.svg">
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=IBM+Plex+Mono:wght@300;400;500&display=swap');
 
-* { margin:0; padding:0; box-sizing:border-box; }
+*{margin:0;padding:0;box-sizing:border-box}
 
 :root {
-  --bg: #060610;
-  --panel: #0a0b14;
-  --card: rgba(255,255,255,0.03);
-  --bdr: rgba(255,255,255,0.06);
-  --txt: #c8cad4;
-  --dim: #484b5e;
-  --bright: #eeeef2;
+  --bg: #080814;
+  --panel: #0c0d18;
+  --card: rgba(255,255,255,0.04);
+  --bdr: rgba(255,255,255,0.08);
+  --txt: #d4d6e0;
+  --dim: #7a7d94;
+  --bright: #f2f2f6;
   --green: #34d399;
-  --amber: #fbbf24;
-  --rose: #fb7185;
   --purple: #a78bfa;
+  --rose: #fb7185;
+  --amber: #fbbf24;
   --blue: #60a5fa;
   --cyan: #22d3ee;
 }
@@ -29,915 +31,836 @@ body {
   background: var(--bg);
   color: var(--txt);
   font-family: 'DM Sans', sans-serif;
-  padding: 32px;
-  min-height: 100vh;
-}
-
-header {
+  font-size: 13px;
+  height: 100vh;
+  overflow: hidden;
   display: flex;
-  align-items: baseline;
-  gap: 16px;
-  margin-bottom: 32px;
-}
-header .tag {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px; font-weight: 400;
-  letter-spacing: 3px; text-transform: uppercase;
-  color: var(--green);
-}
-header h1 {
-  font-size: 22px; font-weight: 400;
-  color: var(--bright); letter-spacing: -0.3px;
-}
-#conn-status {
-  margin-left: auto;
-  display: flex; align-items: center; gap: 8px;
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 11px; color: var(--dim);
-}
-#conn-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--dim); transition: all .3s;
-}
-#conn-dot.on { background: var(--green); box-shadow: 0 0 8px rgba(52,211,153,0.5); }
-#conn-dot.err { background: var(--rose); box-shadow: 0 0 8px rgba(251,113,133,0.5); }
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 16px;
-  margin-bottom: 24px;
+  flex-direction: column;
 }
 
-.card {
-  background: var(--panel);
-  border: 1px solid var(--bdr);
-  border-radius: 10px;
-  padding: 20px;
-}
-.card-label {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 9px; font-weight: 400;
-  letter-spacing: 2px; text-transform: uppercase;
-  color: var(--dim); margin-bottom: 12px;
-}
-.metric-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: 5px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.02);
-}
-.metric-row:last-child { border-bottom: none; }
-.metric-key {
-  font-size: 12px; color: var(--dim);
-}
-.metric-val {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 13px; font-weight: 500;
-  color: var(--bright);
-  transition: color .3s;
-}
-.metric-val.warn { color: var(--amber); }
-.metric-val.bad { color: var(--rose); }
-.metric-val.good { color: var(--green); }
-
-/* Big number hero metrics */
-.hero {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-.hero-num {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 36px; font-weight: 500;
-  color: var(--bright);
-  letter-spacing: -1px;
-  transition: color .3s;
-}
-.hero-unit {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 11px; color: var(--dim);
-  letter-spacing: 0.5px;
-}
-.hero-sub {
-  font-size: 11px; color: var(--dim);
-}
-
-/* Timeline chart */
-.chart-wrap {
-  height: 80px;
-  position: relative;
-  margin-top: 12px;
-}
-canvas {
-  width: 100%; height: 100%;
-  display: block;
-}
-
-/* Last text */
-.last-text {
-  font-size: 12px; color: var(--txt);
-  line-height: 1.6;
-  max-height: 60px; overflow: hidden;
-  opacity: 0.7;
-}
-
-/* Session controls */
-.session-bar {
-  display: flex; align-items: center; gap: 16px;
-  margin-bottom: 24px;
-  padding: 18px 22px;
-  background: var(--panel);
-  border: 1px solid var(--bdr);
-  border-radius: 10px;
-}
-.session-info {
-  flex: 1;
-}
-.session-id {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 13px; font-weight: 500;
-  color: var(--bright);
-}
-.session-meta {
-  font-size: 11px; color: var(--dim);
-  margin-top: 2px;
-}
-.session-btn {
-  padding: 9px 18px;
-  background: transparent;
-  border: 1px solid var(--bdr);
-  border-radius: 6px;
-  color: var(--dim);
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px; font-weight: 400;
-  letter-spacing: 1px; text-transform: uppercase;
-  cursor: pointer;
-  transition: all .2s;
-}
-.session-btn:hover {
-  border-color: rgba(255,255,255,0.15);
-  color: var(--txt);
-}
-.session-btn.primary {
-  border-color: var(--green);
-  color: var(--green);
-}
-.session-btn.primary:hover {
-  background: rgba(52,211,153,0.08);
-}
-.session-btn.danger {
-  border-color: var(--rose);
-  color: var(--rose);
-}
-.session-btn.danger:hover {
-  background: rgba(251,113,133,0.08);
-}
-.session-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-.session-toast {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 10px;
-  letter-spacing: 0.5px;
-  color: var(--green);
-  opacity: 0;
-  transition: opacity .3s;
-}
-.session-toast.show { opacity: 1; }
-
-.admin-nav {
+/* ===== HEADER ===== */
+#header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
+  gap: 20px;
+  padding: 10px 20px;
   border-bottom: 1px solid var(--bdr);
+  background: var(--panel);
+  flex-shrink: 0;
 }
-.nav-back {
+.hdr-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.hdr-brand img { height: 22px; opacity: 0.85; }
+.hdr-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.hdr-session {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--txt);
+  background: var(--card);
+  border: 1px solid var(--bdr);
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+.hdr-meta {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 11px;
   color: var(--dim);
-  text-decoration: none;
-  transition: color .2s;
 }
-.nav-back:hover { color: var(--green); }
-.nav-tabs {
-  display: flex;
-  gap: 4px;
+.hdr-right {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--dim);
 }
-.nav-tab {
+.hdr-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--dim);
+  display: inline-block;
+  transition: all .3s;
+}
+.hdr-dot.ok { background: var(--green); box-shadow: 0 0 6px rgba(52,211,153,0.4); }
+.hdr-dot.err { background: var(--rose); box-shadow: 0 0 6px rgba(251,113,133,0.4); }
+
+/* ===== MAIN GRID ===== */
+#main {
+  display: grid;
+  grid-template-columns: 300px 1fr 300px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.col {
+  overflow-y: auto;
+  padding: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.04) transparent;
+}
+.col-left { border-right: 1px solid var(--bdr); background: var(--panel); }
+.col-center { background: var(--bg); display: flex; flex-direction: column; }
+.col-right { border-left: 1px solid var(--bdr); background: var(--panel); }
+
+/* ===== SECTION LABELS ===== */
+.sec {
   font-family: 'IBM Plex Mono', monospace;
   font-size: 10px;
-  letter-spacing: 1px;
+  font-weight: 500;
+  letter-spacing: 2px;
   text-transform: uppercase;
   color: var(--dim);
-  text-decoration: none;
-  padding: 6px 14px;
-  border: 1px solid var(--bdr);
-  border-radius: 100px;
-  transition: all .2s;
+  margin-bottom: 8px;
 }
-.nav-tab:hover { border-color: var(--green); color: var(--green); }
-.nav-tab.active { border-color: var(--green); color: var(--green); background: rgba(52,211,153,0.06); }
+.sec:not(:first-child) { margin-top: 16px; }
+
+/* ===== METRIC ROWS ===== */
+.m-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+.m-key {
+  font-size: 12px;
+  color: var(--dim);
+}
+.m-val {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--bright);
+  font-weight: 500;
+}
+.m-val.good { color: var(--green); }
+.m-val.warn { color: var(--amber); }
+.m-val.bad { color: var(--rose); }
+
+/* ===== STATUS DOTS ===== */
+.s-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--dim);
+  transition: all .3s;
+}
+.s-dot.ok { background: var(--green); box-shadow: 0 0 6px rgba(52,211,153,0.4); }
+.s-dot.warn { background: var(--amber); box-shadow: 0 0 6px rgba(251,191,36,0.4); }
+.s-dot.err { background: var(--rose); box-shadow: 0 0 6px rgba(251,113,133,0.4); }
+
+/* ===== METRIC CARDS ===== */
+.m-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin: 6px 0;
+}
+.m-card {
+  background: var(--card);
+  border: 1px solid var(--bdr);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.m-card-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 3px;
+}
+.m-card-val {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--bright);
+}
+.m-card-val.sm { font-size: 11px; }
+
+/* ===== GRAPH MIRROR ===== */
+#graph-mirror {
+  flex: 1;
+  min-height: 200px;
+  position: relative;
+  overflow: hidden;
+}
+#graph-mirror svg { width: 100%; height: 100%; display: block; }
+.gm-edge { fill: none; stroke: rgba(255,255,255,0.06); stroke-width: 0.8; }
+.gm-node-outer { fill: none; stroke-width: 0.8; opacity: 0.3; }
+.gm-node-inner { opacity: 0.1; }
+.gm-node-dot { opacity: 0.9; }
+.gm-label {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 8px; font-weight: 500;
+  fill: var(--bright);
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+/* ===== TRANSCRIPT FEED ===== */
+#transcript-feed {
+  flex-shrink: 0;
+  height: 140px;
+  border-top: 1px solid var(--bdr);
+  overflow-y: auto;
+  padding: 8px 14px;
+  font-size: 12px;
+  line-height: 1.7;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.04) transparent;
+}
+#transcript-feed .t-label {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--dim);
+  margin-bottom: 4px;
+}
+.t-chunk { color: var(--txt); display: inline; }
+.t-chunk.faded { color: var(--dim); }
+.t-partial { color: var(--dim); display: inline; font-style: italic; opacity: 0.6; }
+
+/* ===== BACKEND LIST ===== */
+.backend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+.backend-row:last-child { border-bottom: none; }
+.backend-name {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--txt);
+}
+.backend-note {
+  font-size: 11px;
+  color: var(--dim);
+  margin-left: auto;
+}
+
+/* ===== LAST TEXT ===== */
+.last-text {
+  font-size: 12px;
+  color: var(--txt);
+  line-height: 1.5;
+  max-height: 40px;
+  overflow: hidden;
+  opacity: 0.7;
+  margin: 4px 0;
+}
+
+/* ===== SESSION LIST ===== */
+.session-row {
+  display: flex;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 11px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+.session-row:last-child { border-bottom: none; }
+.session-row .s-topic { color: var(--txt); flex: 1; }
+.session-row .s-meta {
+  font-family: 'IBM Plex Mono', monospace;
+  color: var(--dim);
+  font-size: 10px;
+}
+
+/* ===== ACTIVITY LOG ===== */
+.act-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 11px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+.act-row:last-child { border-bottom: none; }
+.act-type {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.act-type.recap { background: rgba(167,139,250,0.1); color: var(--purple); }
+.act-type.clean { background: rgba(52,211,153,0.1); color: var(--green); }
+.act-type.synthesis { background: rgba(96,165,250,0.1); color: var(--blue); }
+.act-status { color: var(--dim); font-size: 10px; }
+.act-status.completed { color: var(--green); }
+.act-status.error { color: var(--rose); }
+.act-status.started { color: var(--amber); }
+.act-time {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  color: var(--dim);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* ===== DISCONNECT BANNER ===== */
+#disconnect-banner {
+  display: none;
+  background: rgba(251,113,133,0.15);
+  border-bottom: 1px solid rgba(251,113,133,0.3);
+  padding: 6px 20px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--rose);
+  text-align: center;
+  letter-spacing: 1px;
+  flex-shrink: 0;
+}
 </style>
 </head>
 <body>
 
-<nav class="admin-nav">
-  <a href="/" class="nav-back">&larr; Mind Map</a>
-  <div class="nav-tabs">
-    <a href="/admin" class="nav-tab active">Live Dashboard</a>
-    <a href="/admin/sessions" class="nav-tab">Sessions</a>
+<!-- HEADER -->
+<div id="header">
+  <div class="hdr-brand">
+    <img src="/mimir-logo-clean.svg" alt="Mímir">
+    <span class="hdr-title">System Monitor</span>
   </div>
-</nav>
-
-<header>
-  <div class="tag">Admin</div>
-  <h1>Live Mind Map Monitor</h1>
-  <div id="conn-status">
-    <div id="conn-dot"></div>
-    <span id="conn-label">Connecting...</span>
-  </div>
-</header>
-
-<div class="session-bar">
-  <div class="session-info">
-    <div class="session-id" id="s-id">No active session</div>
-    <div class="session-meta" id="s-meta"></div>
-  </div>
-  <span class="session-toast" id="s-toast"></span>
-  <button class="session-btn primary" id="btn-new-session">New Session</button>
-  <button class="session-btn danger" id="btn-end-session">End Session</button>
-</div>
-
-<div class="session-bar" style="gap:12px;">
-  <div style="display:flex;align-items:center;gap:8px;min-width:0;">
-    <span class="card-label" style="margin-bottom:0;white-space:nowrap;">LLM</span>
-    <select id="llm-select" style="
-      background:var(--bg); color:var(--bright); border:1px solid var(--bdr);
-      border-radius:6px; padding:7px 12px; font-family:'IBM Plex Mono',monospace;
-      font-size:12px; min-width:260px; cursor:pointer; outline:none;
-    ">
-      <option value="">Loading models...</option>
-    </select>
-  </div>
-  <span id="llm-active" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--green);"></span>
-  <span class="session-toast" id="llm-toast"></span>
-
-  <div style="width:1px;height:24px;background:var(--bdr);margin:0 4px;"></div>
-
-  <div style="display:flex;align-items:center;gap:8px;min-width:0;">
-    <span class="card-label" style="margin-bottom:0;white-space:nowrap;">STT</span>
-    <select id="stt-select" style="
-      background:var(--bg); color:var(--bright); border:1px solid var(--bdr);
-      border-radius:6px; padding:7px 12px; font-family:'IBM Plex Mono',monospace;
-      font-size:12px; min-width:200px; cursor:pointer; outline:none;
-    ">
-      <option value="">Loading...</option>
-    </select>
-  </div>
-  <div style="display:flex;align-items:center;gap:6px;min-width:0;">
-    <span class="card-label" style="margin-bottom:0;white-space:nowrap;">Lang</span>
-    <select id="stt-lang" style="
-      background:var(--bg); color:var(--bright); border:1px solid var(--bdr);
-      border-radius:6px; padding:7px 10px; font-family:'IBM Plex Mono',monospace;
-      font-size:12px; cursor:pointer; outline:none;
-    ">
-      <option value="">Auto-detect</option>
-      <option value="en">English</option>
-      <option value="fr">French</option>
-      <option value="de">German</option>
-      <option value="it">Italian</option>
-      <option value="es">Spanish</option>
-      <option value="pt">Portuguese</option>
-      <option value="sv">Swedish</option>
-      <option value="no">Norwegian</option>
-      <option value="da">Danish</option>
-      <option value="is">Icelandic</option>
-      <option value="fi">Finnish</option>
-    </select>
-  </div>
-  <span id="stt-active" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--green);"></span>
-  <span class="session-toast" id="stt-toast"></span>
-</div>
-
-<div class="grid">
-  <!-- STT Performance -->
-  <div class="card">
-    <div class="card-label">STT Performance</div>
-    <div class="hero">
-      <div class="hero-num" id="stt-duration">--</div>
-      <div class="hero-unit">sec / chunk</div>
-    </div>
-    <div class="hero-sub">Real-time factor: <span id="rt-factor">--</span>x (target &lt; 1.0x)</div>
-    <div class="chart-wrap"><canvas id="chart-stt"></canvas></div>
-  </div>
-
-  <!-- Audio Buffer -->
-  <div class="card">
-    <div class="card-label">Audio Buffer</div>
-    <div class="hero">
-      <div class="hero-num" id="buf-seconds">--</div>
-      <div class="hero-unit">sec buffered</div>
-    </div>
-    <div class="hero-sub">Lag behind real-time</div>
-    <div class="chart-wrap"><canvas id="chart-buf"></canvas></div>
-  </div>
-
-  <!-- LLM API -->
-  <div class="card">
-    <div class="card-label">LLM API</div>
-    <div class="hero">
-      <div class="hero-num" id="claude-duration">--</div>
-      <div class="hero-unit">sec / call</div>
-    </div>
-    <div class="hero-sub">Calls: <span id="claude-calls">0</span> &middot; Errors: <span id="claude-errors">0</span></div>
-    <div id="claude-last-error" style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--rose);margin-top:8px;word-break:break-all;display:none;"></div>
-    <div class="chart-wrap"><canvas id="chart-claude"></canvas></div>
-  </div>
-
-  <!-- E2E Latency -->
-  <div class="card">
-    <div class="card-label">End-to-End Latency</div>
-    <div class="hero">
-      <div class="hero-num" id="e2e-duration">--</div>
-      <div class="hero-unit">sec (chunk grab → send)</div>
-    </div>
-    <div class="hero-sub">Avg: <span id="e2e-avg">--</span>s &middot; Tokenizer: <span id="tok-ms">--</span>ms</div>
-    <div class="chart-wrap"><canvas id="chart-e2e"></canvas></div>
-  </div>
-
-  <!-- Pipeline Stats -->
-  <div class="card">
-    <div class="card-label">Pipeline Stats</div>
-    <div class="metric-row">
-      <span class="metric-key">Chunks processed</span>
-      <span class="metric-val" id="m-processed">0</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Skipped (silent)</span>
-      <span class="metric-val" id="m-silent">0</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Skipped (catch-up)</span>
-      <span class="metric-val" id="m-catchup">0</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Partials emitted</span>
-      <span class="metric-val" id="m-partials">0</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Empty STT results</span>
-      <span class="metric-val" id="m-empty">0</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Tokenizer recreations</span>
-      <span class="metric-val" id="m-recreations">0</span>
-    </div>
-  </div>
-
-  <!-- System -->
-  <div class="card">
-    <div class="card-label">System</div>
-    <div class="metric-row">
-      <span class="metric-key">Uptime</span>
-      <span class="metric-val" id="m-uptime">--</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">WebSocket clients</span>
-      <span class="metric-val" id="m-clients">0</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Audio RMS (live)</span>
-      <span class="metric-val" id="m-rms">--</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">VAD state</span>
-      <span class="metric-val" id="m-vad">--</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Transcript queue</span>
-      <span class="metric-val" id="m-queue">0</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">STT avg duration</span>
-      <span class="metric-val" id="m-avg">--</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Circuit breaker</span>
-      <span class="metric-val" id="m-cb-state">--</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">CB consecutive failures</span>
-      <span class="metric-val" id="m-cb-failures">0</span>
-    </div>
-  </div>
-
-  <!-- Graph Churn -->
-  <div class="card">
-    <div class="card-label">Graph Churn</div>
-    <div class="metric-row">
-      <span class="metric-key">Nodes added / min</span>
-      <span class="metric-val" id="m-nodes-added">0</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Nodes removed / min</span>
-      <span class="metric-val" id="m-nodes-removed">0</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Edge churn / min</span>
-      <span class="metric-val" id="m-edge-churn">0</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Analysis queue depth</span>
-      <span class="metric-val" id="m-analysis-queue">0</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">WS reconnects</span>
-      <span class="metric-val" id="m-reconnects">0</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Restore time</span>
-      <span class="metric-val" id="m-restore-ms">--</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Frontend FPS</span>
-      <span class="metric-val" id="m-frontend-fps">--</span>
-    </div>
+  <span class="hdr-session" id="h-session">No active session</span>
+  <span class="hdr-meta" id="h-topic"></span>
+  <span class="hdr-meta" id="h-duration"></span>
+  <div class="hdr-right">
+    <span><span class="hdr-dot" id="h-ws-dot"></span> WS</span>
+    <span id="h-clients">0 clients</span>
+    <span id="h-uptime">--</span>
+    <a href="/doc/admin" style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--dim);text-decoration:none;padding:4px 10px;border:1px solid var(--bdr);border-radius:100px;transition:all .2s;" onmouseover="this.style.borderColor='var(--green)';this.style.color='var(--green)'" onmouseout="this.style.borderColor='';this.style.color='var(--dim)'">Docs</a>
   </div>
 </div>
 
-<!-- Last transcription -->
-<div class="card" style="margin-bottom:24px;">
-  <div class="card-label">Last STT Output</div>
-  <div class="last-text" id="last-text">Waiting for data...</div>
-</div>
+<div id="disconnect-banner">DISCONNECTED — RECONNECTING...</div>
 
-<!-- FinOps widget -->
-<div style="position:fixed;bottom:20px;right:20px;z-index:100;">
-  <div class="card" style="min-width:240px;background:rgba(10,11,20,0.95);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);">
-    <div class="card-label" style="display:flex;align-items:center;gap:6px;">
-      <span style="color:var(--green);font-size:7px;">$</span> FinOps
+<!-- MAIN -->
+<div id="main">
+
+  <!-- LEFT: PIPELINE HEALTH -->
+  <div class="col col-left">
+    <div class="sec">STT Pipeline</div>
+    <div class="m-row"><div class="s-dot" id="d-stt"></div><span class="m-key">Backend</span><span class="m-val" id="v-stt-backend">--</span></div>
+    <div class="m-row"><span class="m-key">Language</span><span class="m-val" id="v-stt-lang">--</span></div>
+    <div class="m-grid">
+      <div class="m-card"><div class="m-card-label">STT Latency</div><div class="m-card-val sm" id="v-stt-lat">-- / --</div></div>
+      <div class="m-card"><div class="m-card-label">E2E Latency</div><div class="m-card-val sm" id="v-e2e-lat">-- / --</div></div>
+      <div class="m-card"><div class="m-card-label">Chunks</div><div class="m-card-val" id="v-chunks">0</div></div>
+      <div class="m-card"><div class="m-card-label">Skipped</div><div class="m-card-val" id="v-skipped">0</div></div>
     </div>
-    <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;">
-      <span id="fo-cost" style="font-family:'IBM Plex Mono',monospace;font-size:28px;font-weight:500;color:var(--bright);letter-spacing:-1px;">$0.00</span>
-      <span style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--dim);">session</span>
+
+    <div class="sec">LLM Pipeline</div>
+    <div class="m-row"><div class="s-dot" id="d-llm"></div><span class="m-key">Provider</span><span class="m-val" id="v-llm-provider">--</span></div>
+    <div class="m-row"><span class="m-key">Model</span><span class="m-val" id="v-llm-model">--</span></div>
+    <div class="m-grid">
+      <div class="m-card"><div class="m-card-label">LLM Latency</div><div class="m-card-val sm" id="v-llm-lat">-- / --</div></div>
+      <div class="m-card"><div class="m-card-label">Calls / Errors</div><div class="m-card-val sm" id="v-llm-calls">0 / 0</div></div>
+      <div class="m-card"><div class="m-card-label">Parse OK / Fail</div><div class="m-card-val sm" id="v-llm-parse">0 / 0</div></div>
+      <div class="m-card"><div class="m-card-label">Session Cost</div><div class="m-card-val" id="v-cost">$0.00</div></div>
     </div>
-    <div class="metric-row">
-      <span class="metric-key">Input tokens</span>
-      <span class="metric-val" id="fo-input-tok">0</span>
+
+    <div class="sec">Circuit Breaker</div>
+    <div class="m-row"><span class="m-key">State</span><span class="m-val" id="v-cb-state">closed</span></div>
+    <div class="m-row"><span class="m-key">Failures</span><span class="m-val" id="v-cb-failures">0</span></div>
+
+    <div class="sec">Tokens</div>
+    <div class="m-row"><span class="m-key">Input</span><span class="m-val" id="v-tok-in">0</span></div>
+    <div class="m-row"><span class="m-key">Output</span><span class="m-val" id="v-tok-out">0</span></div>
+  </div>
+
+  <!-- CENTER: LIVE ACTIVITY -->
+  <div class="col col-center" style="padding:0;">
+    <div style="padding:10px 14px 0;">
+      <div class="sec" style="margin-bottom:4px;">Knowledge Graph</div>
+      <div style="display:flex;gap:16px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--dim);margin-bottom:6px;">
+        <span>Nodes: <span style="color:var(--bright)" id="v-nodes">0</span> / 24</span>
+        <span>Churn: <span style="color:var(--bright)" id="v-churn">+0 / -0</span></span>
+        <span>Segments: <span style="color:var(--bright)" id="v-segments">0</span></span>
+      </div>
     </div>
-    <div class="metric-row">
-      <span class="metric-key">Output tokens</span>
-      <span class="metric-val" id="fo-output-tok">0</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Cost / call</span>
-      <span class="metric-val" id="fo-per-call">--</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Cost / min</span>
-      <span class="metric-val" id="fo-per-min">--</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Parse OK / fail</span>
-      <span class="metric-val" id="fo-parse">0 / 0</span>
-    </div>
-    <div class="metric-row">
-      <span class="metric-key">Provider</span>
-      <span class="metric-val" id="fo-provider" style="font-size:10px;">--</span>
+    <div id="graph-mirror"><svg id="gm-svg"></svg></div>
+    <div id="transcript-feed">
+      <div class="t-label">Live Transcript</div>
+      <div id="t-text"></div>
     </div>
   </div>
+
+  <!-- RIGHT: SYSTEM RESOURCES -->
+  <div class="col col-right">
+    <div class="sec">STT Backends</div>
+    <div id="stt-backends">
+      <div class="backend-row"><div class="s-dot" id="d-stt-remote"></div><span class="backend-name">faster-whisper</span><span class="backend-note" id="n-stt-remote">--</span></div>
+      <div class="backend-row"><div class="s-dot" id="d-stt-parakeet"></div><span class="backend-name">Parakeet TDT</span><span class="backend-note" id="n-stt-parakeet">--</span></div>
+      <div class="backend-row"><div class="s-dot" id="d-stt-canary"></div><span class="backend-name">Canary</span><span class="backend-note" id="n-stt-canary">--</span></div>
+    </div>
+
+    <div class="sec">System</div>
+    <div class="m-row"><span class="m-key">WS Clients</span><span class="m-val" id="v-ws-clients">0</span></div>
+    <div class="m-row"><span class="m-key">WS Reconnects</span><span class="m-val" id="v-ws-reconnects">0</span></div>
+    <div class="m-row"><span class="m-key">Transcript Queue</span><span class="m-val" id="v-queue">0</span></div>
+    <div class="m-row"><span class="m-key">Display FPS</span><span class="m-val" id="v-fps">--</span></div>
+    <div class="m-row"><span class="m-key">Audio RMS</span><span class="m-val" id="v-rms">--</span></div>
+    <div class="m-row"><span class="m-key">VAD State</span><span class="m-val" id="v-vad">--</span></div>
+    <div class="m-row"><span class="m-key">Last Restore</span><span class="m-val" id="v-restore">--</span></div>
+
+    <div class="sec">Last STT Output</div>
+    <div class="last-text" id="v-last-text">--</div>
+
+    <div class="sec">Last LLM Error</div>
+    <div class="last-text" id="v-last-error" style="color:var(--rose);">--</div>
+
+    <div class="sec">Post-Session Activity</div>
+    <div id="activity-log" style="max-height:160px;overflow-y:auto;scrollbar-width:thin;"></div>
+
+    <div class="sec">Today's Sessions</div>
+    <div id="session-list"></div>
+  </div>
+
 </div>
 
 <script>
-const WS_URL = 'ws://localhost:8765/ws';
-const POLL_MS = 1000;
-const HISTORY = 60; // data points in charts
-
-// Chart data
-const sttHistory = [];
-const bufHistory = [];
-const claudeHistory = [];
-const e2eHistory = [];
-
+// ════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════
 let ws = null;
-let pollTimer = null;
+let wsConnected = false;
+let reconnectDelay = 3000;
+let metricsInterval = null;
+let pingInterval = null;
+let sessionStart = null;
+let segmentCount = 0;
 
+// Graph mirror
+const COLORS = ['#34d399','#a78bfa','#fb7185','#fbbf24','#60a5fa','#22d3ee','#fb923c','#f0abfc','#2dd4bf','#a3e635'];
+const gmCmap = {};
+let gmCi = 0;
+let gmNodes = [], gmEdges = [];
+let gmSvg, gmSim, gmGEdge, gmGNode, gmW, gmH;
+
+// ════════════════════════════════════════════
+//  HELPERS
+// ════════════════════════════════════════════
+function el(id) { return document.getElementById(id); }
+
+function setDot(id, state) {
+  const d = el(id);
+  if (d) d.className = 's-dot' + (state ? ' ' + state : '');
+}
+
+function fmtDuration(secs) {
+  const m = String(Math.floor(secs / 60)).padStart(2, '0');
+  const s = String(Math.floor(secs % 60)).padStart(2, '0');
+  return m + ':' + s;
+}
+
+function fmtUptime(secs) {
+  if (secs < 3600) return Math.floor(secs / 60) + 'm';
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  return h + 'h ' + m + 'm';
+}
+
+// ════════════════════════════════════════════
+//  WEBSOCKET (READ-ONLY)
+// ════════════════════════════════════════════
 function connect() {
-  ws = new WebSocket(WS_URL);
-  const dot = document.getElementById('conn-dot');
-  const label = document.getElementById('conn-label');
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(proto + '//' + location.host + '/ws');
 
   ws.onopen = () => {
-    dot.className = 'on';
-    label.textContent = 'Connected';
-    pollTimer = setInterval(() => {
-      if (ws.readyState === 1) ws.send(JSON.stringify({type: 'get_metrics'}));
-    }, POLL_MS);
-  };
-
-  ws.onmessage = e => {
-    const d = JSON.parse(e.data);
-    if (d.type === 'metrics') update(d);
+    wsConnected = true;
+    reconnectDelay = 3000;
+    el('h-ws-dot').className = 'hdr-dot ok';
+    el('disconnect-banner').style.display = 'none';
+    metricsInterval = setInterval(() => send({type:'get_metrics'}), 2000);
+    pingInterval = setInterval(() => send({type:'ping'}), 5000);
   };
 
   ws.onclose = () => {
-    dot.className = 'err';
-    label.textContent = 'Disconnected — retrying...';
-    clearInterval(pollTimer);
-    setTimeout(connect, 3000);
+    wsConnected = false;
+    el('h-ws-dot').className = 'hdr-dot err';
+    el('disconnect-banner').style.display = '';
+    clearInterval(metricsInterval);
+    clearInterval(pingInterval);
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 1.5, 30000);
   };
 
-  ws.onerror = () => ws.close();
+  ws.onerror = () => { el('h-ws-dot').className = 'hdr-dot err'; };
+
+  ws.onmessage = e => {
+    const d = JSON.parse(e.data);
+    switch (d.type) {
+      case 'metrics': updateMetrics(d); break;
+      case 'transcript':
+        if (d.text) appendTranscript(d.text, false);
+        segmentCount++;
+        el('v-segments').textContent = segmentCount;
+        setDot('d-stt', 'ok');
+        break;
+      case 'partial_transcript':
+        if (d.text) appendTranscript(d.text, true);
+        break;
+      case 'graph_update':
+        if (d.graph) applyGraphMirror(d.graph);
+        break;
+      case 'session_reset':
+        sessionStart = Date.now();
+        segmentCount = 0;
+        el('h-session').textContent = d.session_id || '--';
+        el('h-topic').textContent = d.topic || '';
+        el('v-segments').textContent = '0';
+        el('t-text').innerHTML = '';
+        gmNodes = []; gmEdges = [];
+        break;
+      case 'session_ended':
+        sessionStart = null;
+        el('h-session').textContent = 'No active session';
+        el('h-topic').textContent = '';
+        el('h-duration').textContent = '';
+        break;
+      case 'restore':
+        if (d.session_id) {
+          el('h-session').textContent = d.session_id;
+          sessionStart = sessionStart || Date.now();
+        }
+        if (d.segments) {
+          d.segments.forEach(seg => {
+            if (!seg.is_partial && seg.text) {
+              appendTranscript(seg.text, false);
+              segmentCount++;
+            }
+          });
+          el('v-segments').textContent = segmentCount;
+        }
+        if (d.snapshot && d.snapshot.graph) {
+          const g = d.snapshot.graph;
+          const nodes = [];
+          if (g.nodes) {
+            for (const [nid, ns] of Object.entries(g.nodes)) {
+              if (ns.state === 'active') nodes.push({id: ns.id, label: ns.label, group: ns.group});
+            }
+          }
+          if (nodes.length > 0) applyGraphMirror({nodes, edges: g.edges || []});
+        }
+        break;
+    }
+  };
 }
 
-function update(m) {
-  // Session info
-  const sid = m.current_session_id || null;
-  if (sid) {
-    currentSessionId = sid;
-    document.getElementById('s-id').textContent = 'Session: ' + sid;
-    const nodes = m.active_nodes || 0;
-    document.getElementById('s-meta').textContent = nodes + ' active nodes';
-  } else {
-    document.getElementById('s-id').textContent = 'No active session';
-    document.getElementById('s-meta').textContent = '';
+function send(obj) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+}
+
+// ════════════════════════════════════════════
+//  METRICS UPDATE
+// ════════════════════════════════════════════
+function updateMetrics(m) {
+  // Session
+  if (m.current_session_id) {
+    el('h-session').textContent = m.current_session_id;
+    if (!sessionStart) sessionStart = Date.now();
   }
 
-  const chunkSec = m.chunk_seconds || 2;
+  // Uptime
+  el('h-uptime').textContent = m.uptime ? 'up ' + fmtUptime(m.uptime) : '--';
+  el('h-clients').textContent = (m.ws_clients || 0) + ' clients';
 
-  // STT duration hero
-  const dur = m.stt_last_duration || 0;
-  const rtf = dur / chunkSec;
-  document.getElementById('stt-duration').textContent = dur.toFixed(2);
-  const sttEl = document.getElementById('stt-duration');
-  sttEl.className = 'hero-num' + (rtf > 1.2 ? ' bad' : rtf > 0.9 ? ' warn' : ' good');
+  // STT
+  el('v-stt-backend').textContent = m.stt_backend || '--';
+  el('v-stt-lang').textContent = m.stt_language ? m.stt_language.toUpperCase() : '--';
+  const sttLast = m.stt_last_duration ? (m.stt_last_duration * 1000).toFixed(0) + 'ms' : '--';
+  const sttAvg = m.stt_avg_duration ? (m.stt_avg_duration * 1000).toFixed(0) + 'ms' : '--';
+  el('v-stt-lat').textContent = sttLast + ' / ' + sttAvg;
+  const e2eLast = m.stt_e2e_last ? (m.stt_e2e_last * 1000).toFixed(0) + 'ms' : '--';
+  const e2eAvg = m.stt_e2e_avg ? (m.stt_e2e_avg * 1000).toFixed(0) + 'ms' : '--';
+  el('v-e2e-lat').textContent = e2eLast + ' / ' + e2eAvg;
+  el('v-chunks').textContent = m.chunks_processed || 0;
+  el('v-skipped').textContent = (m.chunks_skipped_silent || 0) + (m.chunks_skipped_catchup || 0);
 
-  document.getElementById('rt-factor').textContent = rtf.toFixed(2);
-  const rtfEl = document.getElementById('rt-factor');
-  rtfEl.style.color = rtf > 1.2 ? 'var(--rose)' : rtf > 0.9 ? 'var(--amber)' : 'var(--green)';
+  if (m.chunks_processed > 0) setDot('d-stt', 'ok');
 
-  // Buffer hero
-  const buf = m.audio_buffer_seconds || 0;
-  document.getElementById('buf-seconds').textContent = buf.toFixed(1);
-  const bufEl = document.getElementById('buf-seconds');
-  bufEl.className = 'hero-num' + (buf > 6 ? ' bad' : buf > 3 ? ' warn' : ' good');
+  // LLM
+  el('v-llm-provider').textContent = m.llm_provider || '--';
+  el('v-llm-model').textContent = m.llm_model || '--';
+  const llmLast = m.claude_last_duration ? m.claude_last_duration.toFixed(1) + 's' : '--';
+  const llmAvg = m.claude_avg_duration ? m.claude_avg_duration.toFixed(1) + 's' : '--';
+  el('v-llm-lat').textContent = llmLast + ' / ' + llmAvg;
+  el('v-llm-calls').textContent = (m.claude_calls || 0) + ' / ' + (m.claude_errors || 0);
+  el('v-llm-parse').textContent = (m.llm_parse_ok || 0) + ' / ' + (m.llm_parse_fail || 0);
+  el('v-cost').textContent = '$' + (m.llm_session_cost || 0).toFixed(4);
 
-  // Claude / LLM API
-  const cDur = m.claude_last_duration || 0;
-  document.getElementById('claude-duration').textContent = cDur.toFixed(2);
-  const cEl = document.getElementById('claude-duration');
-  cEl.className = 'hero-num' + (cDur > 8 ? ' bad' : cDur > 5 ? ' warn' : ' good');
-  document.getElementById('claude-calls').textContent = m.claude_calls || 0;
-  if (m.llm_provider && m.llm_model) {
-    document.getElementById('llm-active').textContent = m.llm_provider + '/' + m.llm_model;
-  }
-  if (m.stt_backend) {
-    document.getElementById('stt-active').textContent = m.stt_backend + (m.stt_remote_url ? ' (' + m.stt_remote_url + ')' : '');
-  }
-  const cerrEl = document.getElementById('claude-errors');
-  cerrEl.textContent = m.claude_errors || 0;
-  cerrEl.style.color = (m.claude_errors || 0) > 0 ? 'var(--rose)' : 'var(--dim)';
-  const errBox = document.getElementById('claude-last-error');
-  if (m.claude_last_error) { errBox.textContent = m.claude_last_error; errBox.style.display = 'block'; }
-  else { errBox.style.display = 'none'; }
+  if (m.claude_calls > 0) setDot('d-llm', m.claude_errors > 0 ? 'warn' : 'ok');
+  if (m.cb_state === 'open') setDot('d-llm', 'err');
 
-  // E2E latency
-  const e2e = m.stt_e2e_last || 0;
-  document.getElementById('e2e-duration').textContent = e2e.toFixed(2);
-  const e2eEl = document.getElementById('e2e-duration');
-  e2eEl.className = 'hero-num' + (e2e > chunkSec * 1.2 ? ' bad' : e2e > chunkSec ? ' warn' : ' good');
-  document.getElementById('e2e-avg').textContent = (m.stt_e2e_avg || 0).toFixed(2);
-  document.getElementById('tok-ms').textContent = (m.tokenizer_last_ms || 0).toFixed(0);
+  // Circuit breaker
+  const cb = m.cb_state || 'closed';
+  el('v-cb-state').textContent = cb;
+  el('v-cb-state').className = 'm-val' + (cb === 'closed' ? ' good' : cb === 'open' ? ' bad' : ' warn');
+  el('v-cb-failures').textContent = m.cb_failures || 0;
 
-  // Pipeline stats
-  document.getElementById('m-processed').textContent = m.chunks_processed || 0;
-  document.getElementById('m-silent').textContent = m.chunks_skipped_silent || 0;
-  const catchupEl = document.getElementById('m-catchup');
-  catchupEl.textContent = m.chunks_skipped_catchup || 0;
-  catchupEl.className = 'metric-val' + ((m.chunks_skipped_catchup || 0) > 0 ? ' warn' : '');
-  document.getElementById('m-partials').textContent = m.stt_partials_emitted || 0;
-  document.getElementById('m-empty').textContent = m.stt_empty_results || 0;
-  document.getElementById('m-recreations').textContent = m.tokenizer_recreations || 0;
+  // Tokens
+  el('v-tok-in').textContent = (m.llm_input_tokens || 0).toLocaleString();
+  el('v-tok-out').textContent = (m.llm_output_tokens || 0).toLocaleString();
+
+  // Graph
+  el('v-nodes').textContent = m.active_nodes || 0;
+  el('v-churn').textContent = '+' + (m.nodes_added_per_min || 0) + ' / -' + (m.nodes_removed_per_min || 0);
 
   // System
-  const up = m.uptime || 0;
-  const mins = Math.floor(up / 60);
-  const secs = Math.floor(up % 60);
-  document.getElementById('m-uptime').textContent = `${mins}m ${secs}s`;
-  document.getElementById('m-clients').textContent = m.ws_clients || 0;
-  const rms = m.audio_rms || 0;
-  const rmsEl = document.getElementById('m-rms');
-  rmsEl.textContent = rms.toFixed(4);
-  rmsEl.className = 'metric-val' + (rms < 0.01 ? ' warn' : ' good');
-  document.getElementById('m-queue').textContent = m.transcript_queue_size || 0;
-  document.getElementById('m-avg').textContent = (m.stt_avg_duration || 0).toFixed(2) + 's';
-  const cbState = m.cb_state || 'closed';
-  const cbEl = document.getElementById('m-cb-state');
-  cbEl.textContent = cbState;
-  cbEl.className = 'metric-val' + (cbState === 'closed' ? ' good' : cbState === 'open' ? ' warn' : '');
-  document.getElementById('m-cb-failures').textContent = m.cb_failures || 0;
-
-  // VAD state
-  const vadState = m.vad_state || 'unknown';
-  const vadEl = document.getElementById('m-vad');
-  vadEl.textContent = vadState;
-  vadEl.className = 'metric-val' + (vadState === 'speaking' ? ' good' : vadState === 'silent' ? ' warn' : '');
-
-  // Graph churn metrics
-  document.getElementById('m-nodes-added').textContent = m.nodes_added_per_min || 0;
-  document.getElementById('m-nodes-removed').textContent = m.nodes_removed_per_min || 0;
-  document.getElementById('m-edge-churn').textContent = m.edge_churn_per_min || 0;
-  document.getElementById('m-analysis-queue').textContent = m.analysis_queue_depth || 0;
-  document.getElementById('m-reconnects').textContent = m.ws_reconnects || 0;
-  const restoreMs = m.last_restore_ms || 0;
-  const restoreEl = document.getElementById('m-restore-ms');
-  restoreEl.textContent = restoreMs > 0 ? restoreMs.toFixed(0) + 'ms' : '--';
-  restoreEl.className = 'metric-val' + (restoreMs > 10000 ? ' bad' : restoreMs > 5000 ? ' warn' : restoreMs > 0 ? ' good' : '');
-  const feFps = m.frontend_fps || 0;
-  const fpsEl = document.getElementById('m-frontend-fps');
-  fpsEl.textContent = feFps > 0 ? feFps : '--';
-  fpsEl.className = 'metric-val' + (feFps > 0 && feFps < 30 ? ' bad' : feFps >= 30 && feFps < 50 ? ' warn' : feFps >= 50 ? ' good' : '');
+  el('v-ws-clients').textContent = m.ws_clients || 0;
+  el('v-ws-reconnects').textContent = m.ws_reconnects || 0;
+  el('v-queue').textContent = m.transcript_queue_size || 0;
+  el('v-fps').textContent = m.frontend_fps ? Math.round(m.frontend_fps) : '--';
+  el('v-rms').textContent = m.audio_rms ? m.audio_rms.toFixed(4) : '--';
+  el('v-vad').textContent = m.vad_state || '--';
+  el('v-restore').textContent = m.last_restore_ms ? m.last_restore_ms.toFixed(0) + 'ms' : '--';
 
   // Last text
-  if (m.stt_last_text) {
-    document.getElementById('last-text').textContent = m.stt_last_text;
+  if (m.stt_last_text) el('v-last-text').textContent = m.stt_last_text;
+  if (m.claude_last_error) {
+    el('v-last-error').textContent = m.claude_last_error;
+    el('v-last-error').style.display = '';
   }
 
-  // Chart data
-  sttHistory.push(dur);
-  if (sttHistory.length > HISTORY) sttHistory.shift();
-  bufHistory.push(buf);
-  if (bufHistory.length > HISTORY) bufHistory.shift();
-  if (cDur > 0) { claudeHistory.push(cDur); if (claudeHistory.length > HISTORY) claudeHistory.shift(); }
-  e2eHistory.push(e2e);
-  if (e2eHistory.length > HISTORY) e2eHistory.shift();
-
-  drawChart('chart-stt', sttHistory, chunkSec, 'stt');
-  drawChart('chart-buf', bufHistory, chunkSec * 3, 'buf');
-  drawChart('chart-claude', claudeHistory, 5, 'claude');
-  drawChart('chart-e2e', e2eHistory, chunkSec, 'e2e');
-
-  // FinOps
-  const sessionCost = m.llm_session_cost || 0;
-  document.getElementById('fo-cost').textContent = '$' + sessionCost.toFixed(4);
-  document.getElementById('fo-cost').style.color = sessionCost > 1 ? 'var(--rose)' : sessionCost > 0.1 ? 'var(--amber)' : 'var(--green)';
-  const inTok = m.llm_input_tokens || 0;
-  const outTok = m.llm_output_tokens || 0;
-  document.getElementById('fo-input-tok').textContent = inTok.toLocaleString();
-  document.getElementById('fo-output-tok').textContent = outTok.toLocaleString();
-  const lastCost = m.llm_last_cost || 0;
-  document.getElementById('fo-per-call').textContent = lastCost > 0 ? '$' + lastCost.toFixed(5) : 'free';
-  const uptime = m.uptime || 1;
-  const costPerMin = sessionCost / (uptime / 60);
-  document.getElementById('fo-per-min').textContent = costPerMin > 0 ? '$' + costPerMin.toFixed(4) : 'free';
-  document.getElementById('fo-parse').textContent = (m.llm_parse_ok || 0) + ' / ' + (m.llm_parse_fail || 0);
-  const parseEl = document.getElementById('fo-parse');
-  parseEl.className = 'metric-val' + ((m.llm_parse_fail || 0) > (m.llm_parse_ok || 0) ? ' bad' : (m.llm_parse_fail || 0) > 0 ? ' warn' : ' good');
-  document.getElementById('fo-provider').textContent = (m.llm_provider || '') + '/' + (m.llm_model || '');
+  // Activity log
+  if (m.activity_log) renderActivityLog(m.activity_log);
 }
 
-function drawChart(canvasId, data, threshold, type) {
-  const canvas = document.getElementById(canvasId);
-  const ctx = canvas.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  ctx.scale(dpr, dpr);
-  const W = rect.width, H = rect.height;
-
-  ctx.clearRect(0, 0, W, H);
-
-  if (data.length < 2) return;
-
-  const max = Math.max(threshold * 1.5, ...data) * 1.1;
-  const step = W / (HISTORY - 1);
-
-  // Threshold line
-  const thY = H - (threshold / max) * H;
-  ctx.strokeStyle = 'rgba(251,113,133,0.2)';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  ctx.moveTo(0, thY);
-  ctx.lineTo(W, thY);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Threshold label
-  ctx.fillStyle = 'rgba(251,113,133,0.35)';
-  ctx.font = '9px IBM Plex Mono';
-  const thLabels = {stt: `${threshold}s (1:1)`, buf: `${threshold}s (skip)`, claude: `${threshold}s target`, e2e: `${threshold}s (chunk)`};
-  ctx.fillText(thLabels[type] || `${threshold}s`, 4, thY - 4);
-
-  // Data line
-  ctx.beginPath();
-  const offset = HISTORY - data.length;
-  for (let i = 0; i < data.length; i++) {
-    const x = (i + offset) * step;
-    const y = H - (data[i] / max) * H;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+function renderActivityLog(entries) {
+  const box = el('activity-log');
+  if (!entries || !entries.length) {
+    box.innerHTML = '<div style="font-size:11px;color:var(--dim);">No activity yet</div>';
+    return;
   }
-  const lineColors = {stt: 'rgba(167,139,250,0.7)', buf: 'rgba(96,165,250,0.7)', claude: 'rgba(52,211,153,0.7)', e2e: 'rgba(251,191,36,0.7)'};
-  const fillColors = {stt: 'rgba(167,139,250,0.06)', buf: 'rgba(96,165,250,0.06)', claude: 'rgba(52,211,153,0.06)', e2e: 'rgba(251,191,36,0.06)'};
-  ctx.strokeStyle = lineColors[type] || lineColors.stt;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+  // Show newest first
+  const reversed = entries.slice().reverse();
+  box.innerHTML = reversed.map(e => {
+    const ago = Math.round((Date.now() / 1000 - e.timestamp));
+    let agoStr;
+    if (ago < 60) agoStr = ago + 's ago';
+    else if (ago < 3600) agoStr = Math.floor(ago / 60) + 'm ago';
+    else agoStr = Math.floor(ago / 3600) + 'h ago';
 
-  // Fill under
-  ctx.lineTo((data.length - 1 + offset) * step, H);
-  ctx.lineTo(offset * step, H);
-  ctx.closePath();
-  ctx.fillStyle = fillColors[type] || fillColors.stt;
-  ctx.fill();
+    const typeClass = e.type === 'recap' ? 'recap' : e.type === 'clean' ? 'clean' : 'synthesis';
+    const statusClass = e.status || '';
+    const sid = e.session_id ? e.session_id.substring(0, 8) : '';
+    const detail = e.detail ? ` — ${e.detail}` : '';
+
+    return `<div class="act-row">
+      <span class="act-type ${typeClass}">${e.type}</span>
+      <span class="act-status ${statusClass}">${e.status}</span>
+      <span style="font-size:10px;color:var(--dim);">${sid}${detail}</span>
+      <span class="act-time">${agoStr}</span>
+    </div>`;
+  }).join('');
 }
 
-// ─── Session controls ───
-const API_BASE = 'http://localhost:8765';
-let currentSessionId = null;
-
-function showToast(msg) {
-  const el = document.getElementById('s-toast');
-  el.textContent = msg;
-  el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 3000);
+// ════════════════════════════════════════════
+//  TRANSCRIPT FEED
+// ════════════════════════════════════════════
+function appendTranscript(text, isPartial) {
+  const box = el('t-text');
+  if (isPartial) {
+    let p = box.querySelector('.t-partial');
+    if (!p) { p = document.createElement('span'); p.className = 't-partial'; box.appendChild(p); }
+    p.textContent = text + ' ';
+  } else {
+    const partial = box.querySelector('.t-partial');
+    if (partial) partial.remove();
+    box.querySelectorAll('.t-chunk:not(.faded)').forEach(c => c.classList.add('faded'));
+    const s = document.createElement('span');
+    s.className = 't-chunk';
+    s.textContent = text + ' ';
+    box.appendChild(s);
+  }
+  el('transcript-feed').scrollTop = el('transcript-feed').scrollHeight;
 }
 
-document.getElementById('btn-new-session').addEventListener('click', async () => {
-  if (!confirm('End the current session and start a fresh one?\nAll data from this session is archived.')) return;
-  const btn = document.getElementById('btn-new-session');
-  btn.disabled = true;
-  try {
-    const topic = prompt('Topic for new session (optional):', '') || '';
-    const resp = await fetch(API_BASE + '/v1/sessions/new', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({topic}),
+// ════════════════════════════════════════════
+//  GRAPH MIRROR
+// ════════════════════════════════════════════
+function gmColor(group) {
+  if (!gmCmap[group]) gmCmap[group] = COLORS[gmCi++ % COLORS.length];
+  return gmCmap[group];
+}
+
+function initGraphMirror() {
+  const wrap = el('graph-mirror');
+  gmW = wrap.clientWidth || 400;
+  gmH = wrap.clientHeight || 300;
+
+  gmSvg = d3.select('#gm-svg').attr('width', gmW).attr('height', gmH);
+
+  const defs = gmSvg.append('defs');
+  const glow = defs.append('filter').attr('id','gm-glow')
+    .attr('x','-50%').attr('y','-50%').attr('width','200%').attr('height','200%');
+  glow.append('feGaussianBlur').attr('stdDeviation','3').attr('result','b');
+  const fm = glow.append('feMerge');
+  fm.append('feMergeNode').attr('in','b');
+  fm.append('feMergeNode').attr('in','SourceGraphic');
+
+  gmGEdge = gmSvg.append('g');
+  gmGNode = gmSvg.append('g');
+
+  gmSim = d3.forceSimulation()
+    .force('link', d3.forceLink().id(d => d.id).distance(80).strength(0.4))
+    .force('charge', d3.forceManyBody().strength(-200).distanceMax(250))
+    .force('center', d3.forceCenter(gmW / 2, gmH / 2).strength(0.05))
+    .force('collide', d3.forceCollide().radius(30).strength(0.8))
+    .force('x', d3.forceX(gmW / 2).strength(0.02))
+    .force('y', d3.forceY(gmH / 2).strength(0.02))
+    .alphaDecay(0.03).velocityDecay(0.4)
+    .on('tick', () => {
+      gmGEdge.selectAll('.gm-e').attr('d', d => {
+        if (!d.source.x) return '';
+        const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+        const dr = Math.sqrt(dx*dx + dy*dy) * 1.5;
+        return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
+      });
+      gmGNode.selectAll('.gm-n').attr('transform', d => `translate(${d.x},${d.y})`);
     });
+
+  new ResizeObserver(() => {
+    gmW = wrap.clientWidth || 400;
+    gmH = wrap.clientHeight || 300;
+    gmSvg.attr('width', gmW).attr('height', gmH);
+    gmSim.force('center', d3.forceCenter(gmW / 2, gmH / 2));
+    gmSim.force('x', d3.forceX(gmW / 2).strength(0.02));
+    gmSim.force('y', d3.forceY(gmH / 2).strength(0.02));
+    if (gmNodes.length) gmSim.alpha(0.1).restart();
+  }).observe(wrap);
+}
+
+function applyGraphMirror(g) {
+  const prev = new Set(gmNodes.map(n => n.id));
+  const nids = new Set(g.nodes.map(n => n.id));
+
+  gmNodes = g.nodes.map(n => {
+    const o = gmNodes.find(x => x.id === n.id);
+    return { ...n,
+      x: o ? o.x : gmW/2 + (Math.random()-0.5)*100,
+      y: o ? o.y : gmH/2 + (Math.random()-0.5)*100,
+      vx: o ? o.vx : 0, vy: o ? o.vy : 0,
+      color: gmColor(n.group),
+    };
+  });
+
+  gmEdges = g.edges.filter(e => {
+    const s = e.source?.id || e.source, t = e.target?.id || e.target;
+    return nids.has(s) && nids.has(t);
+  }).map(e => ({ source: e.source?.id || e.source, target: e.target?.id || e.target, label: e.label || '' }));
+
+  // Render
+  const eData = gmGEdge.selectAll('.gm-e').data(gmEdges, d => d.source + '->' + d.target);
+  eData.exit().transition().duration(300).style('opacity', 0).remove();
+  eData.enter().append('path').attr('class', 'gm-e gm-edge').style('opacity', 0)
+    .transition().duration(500).style('opacity', 1);
+
+  const nData = gmGNode.selectAll('.gm-n').data(gmNodes, d => d.id);
+  nData.exit().transition().duration(300).style('opacity', 0).remove();
+  const nEnter = nData.enter().append('g').attr('class', 'gm-n').style('opacity', 0);
+  nEnter.append('circle').attr('class', 'gm-node-outer').attr('r', 14);
+  nEnter.append('circle').attr('class', 'gm-node-inner').attr('r', 11);
+  nEnter.append('circle').attr('class', 'gm-node-dot').attr('r', 2).attr('filter', 'url(#gm-glow)');
+  nEnter.append('text').attr('class', 'gm-label').attr('dy', 24);
+  nEnter.transition().duration(500).style('opacity', 1);
+
+  const merged = nEnter.merge(nData);
+  merged.select('.gm-node-outer').attr('stroke', d => d.color);
+  merged.select('.gm-node-inner').attr('fill', d => d.color);
+  merged.select('.gm-node-dot').attr('fill', d => d.color);
+  merged.select('.gm-label').text(d => d.label);
+
+  gmSim.nodes(gmNodes);
+  gmSim.force('link').links(gmEdges);
+  gmSim.alpha(0.4).restart();
+}
+
+// ════════════════════════════════════════════
+//  STT BACKEND HEALTH
+// ════════════════════════════════════════════
+async function loadBackendHealth() {
+  try {
+    const resp = await fetch('/v1/stt/backends');
     const data = await resp.json();
-    currentSessionId = data.id;
-    showToast('New session started: ' + data.id);
-  } catch(e) {
-    showToast('Failed: ' + e.message);
-  }
-  btn.disabled = false;
-});
-
-document.getElementById('btn-end-session').addEventListener('click', async () => {
-  if (!currentSessionId) { showToast('No active session'); return; }
-  if (!confirm('End the current session and archive all data?\nThe mind map will go blank until a new session is created.')) return;
-  const btn = document.getElementById('btn-end-session');
-  btn.disabled = true;
-  try {
-    await fetch(API_BASE + '/v1/sessions/' + currentSessionId + '/end', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: '{}',
-    });
-    showToast('Session ' + currentSessionId + ' archived');
-    currentSessionId = null;
-    document.getElementById('s-id').textContent = 'No active session';
-    document.getElementById('s-meta').textContent = '';
-  } catch(e) {
-    showToast('Failed: ' + e.message);
-  }
-  btn.disabled = false;
-});
-
-// ─── LLM provider switcher ───
-async function loadLLMProviders() {
-  const sel = document.getElementById('llm-select');
-  const activeLabel = document.getElementById('llm-active');
-  try {
-    const resp = await fetch(API_BASE + '/v1/llm/providers');
-    const {providers, active} = await resp.json();
-
-    sel.innerHTML = '';
-    for (const [pid, prov] of Object.entries(providers)) {
-      if (!prov.available) continue;
-      const group = document.createElement('optgroup');
-      group.label = prov.label;
-      for (const m of prov.models) {
-        const opt = document.createElement('option');
-        opt.value = pid + '/' + m.id;
-        opt.textContent = m.label + (m.note ? ' (' + m.note + ')' : '');
-        if (pid === active.provider && m.id === active.model) opt.selected = true;
-        group.appendChild(opt);
-      }
-      sel.appendChild(group);
+    const map = { remote: 'stt-remote', parakeet: 'stt-parakeet', canary: 'stt-canary' };
+    for (const [key, b] of Object.entries(data.backends)) {
+      const dotId = 'd-' + (map[key] || key);
+      const noteId = 'n-' + (map[key] || key);
+      const dot = el(dotId);
+      if (dot) dot.className = 's-dot' + (b.available ? ' ok' : '');
+      const note = el(noteId);
+      if (note) note.textContent = b.available ? 'online' : 'offline';
     }
-
-    activeLabel.textContent = active.provider + '/' + active.model;
-  } catch(e) {
-    sel.innerHTML = '<option>Failed to load</option>';
-  }
+    // Active indicator
+    const active = data.active?.backend;
+    if (active) el('v-stt-backend').textContent = active;
+  } catch (e) {}
 }
 
-document.getElementById('llm-select').addEventListener('change', async (e) => {
-  const val = e.target.value;
-  if (!val) return;
-  const [provider, ...modelParts] = val.split('/');
-  const model = modelParts.join('/');  // model IDs can contain /
-  const toast = document.getElementById('llm-toast');
+// ════════════════════════════════════════════
+//  SESSION LIST (TODAY)
+// ════════════════════════════════════════════
+async function loadTodaySessions() {
   try {
-    const resp = await fetch(API_BASE + '/v1/llm/active', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({provider, model}),
-    });
-    const data = await resp.json();
-    if (resp.ok) {
-      document.getElementById('llm-active').textContent = data.active.provider + '/' + data.active.model;
-      toast.textContent = 'Switched';
-      toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 2000);
-    } else {
-      toast.textContent = data.error || 'Failed';
-      toast.style.color = 'var(--rose)';
-      toast.classList.add('show');
-      setTimeout(() => { toast.classList.remove('show'); toast.style.color = ''; }, 3000);
+    const resp = await fetch('/v1/sessions');
+    const sessions = await resp.json();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayTs = today.getTime() / 1000;
+
+    const todaySessions = sessions.filter(s => s.created_at >= todayTs);
+    const list = el('session-list');
+    if (!todaySessions.length) {
+      list.innerHTML = '<div style="font-size:11px;color:var(--dim);">No sessions today</div>';
+      return;
     }
-  } catch(err) {
-    toast.textContent = err.message;
-    toast.style.color = 'var(--rose)';
-    toast.classList.add('show');
-    setTimeout(() => { toast.classList.remove('show'); toast.style.color = ''; }, 3000);
-  }
-});
-
-loadLLMProviders();
-
-// ─── STT backend switcher ───
-async function loadSTTBackends() {
-  const sel = document.getElementById('stt-select');
-  const langSel = document.getElementById('stt-lang');
-  const activeLabel = document.getElementById('stt-active');
-  try {
-    const resp = await fetch(API_BASE + '/v1/stt/backends');
-    const {backends, active} = await resp.json();
-
-    sel.innerHTML = '';
-    for (const [bid, b] of Object.entries(backends)) {
-      if (!b.available) continue;
-      const opt = document.createElement('option');
-      opt.value = bid;
-      opt.textContent = b.label + (b.note ? ' — ' + b.note : '');
-      if (bid === active.backend) opt.selected = true;
-      sel.appendChild(opt);
-    }
-
-    // Set language dropdown
-    if (active.language) langSel.value = active.language;
-    activeLabel.textContent = active.backend + (active.language ? ' [' + active.language + ']' : ' [auto]');
-  } catch(e) {
-    sel.innerHTML = '<option>Failed to load</option>';
-  }
+    list.innerHTML = todaySessions.map(s => {
+      const dur = s.ended_at ? fmtDuration(s.ended_at - s.created_at) : 'active';
+      return `<div class="session-row">
+        <span class="s-topic">${s.topic || 'Untitled'}</span>
+        <span class="s-meta">${s.segment_count || 0} seg</span>
+        <span class="s-meta">${dur}</span>
+      </div>`;
+    }).join('');
+  } catch (e) {}
 }
 
-async function updateSTT(changes) {
-  const toast = document.getElementById('stt-toast');
-  try {
-    const resp = await fetch(API_BASE + '/v1/stt/active', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(changes),
-    });
-    const data = await resp.json();
-    if (resp.ok) {
-      const a = data.active;
-      document.getElementById('stt-active').textContent = a.backend + (a.language ? ' [' + a.language + ']' : ' [auto]');
-      toast.textContent = 'Updated';
-      toast.style.color = '';
-      toast.classList.add('show');
-      setTimeout(() => toast.classList.remove('show'), 2000);
-    } else {
-      toast.textContent = data.error || 'Failed';
-      toast.style.color = 'var(--rose)';
-      toast.classList.add('show');
-      setTimeout(() => { toast.classList.remove('show'); toast.style.color = ''; }, 3000);
-    }
-  } catch(err) {
-    toast.textContent = err.message;
-    toast.style.color = 'var(--rose)';
-    toast.classList.add('show');
-    setTimeout(() => { toast.classList.remove('show'); toast.style.color = ''; }, 3000);
+// ════════════════════════════════════════════
+//  SESSION TIMER
+// ════════════════════════════════════════════
+setInterval(() => {
+  if (sessionStart) {
+    el('h-duration').textContent = fmtDuration((Date.now() - sessionStart) / 1000);
   }
-}
+}, 1000);
 
-document.getElementById('stt-select').addEventListener('change', e => updateSTT({backend: e.target.value}));
-document.getElementById('stt-lang').addEventListener('change', e => updateSTT({language: e.target.value}));
-
-loadSTTBackends();
-
+// ════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════
+initGraphMirror();
 connect();
+loadBackendHealth();
+loadTodaySessions();
+// Refresh health and sessions periodically
+setInterval(loadBackendHealth, 30000);
+setInterval(loadTodaySessions, 30000);
 </script>
 </body>
 </html>
