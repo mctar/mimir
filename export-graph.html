@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mimir Graph Export</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #0c0c1a;
+  --txt: #d4d6e0;
+  --dim: #6b6f88;
+  --bright: #f4f4f8;
+  --muted: rgba(255,255,255,0.35);
+}
+
+body {
+  background: var(--bg);
+  color: var(--bright);
+  font-family: 'DM Sans', sans-serif;
+  overflow: hidden;
+}
+
+/* ── PDF mode: graph + metadata panel ── */
+.pdf-mode #graph-area { height: 780px; }
+.pdf-mode #meta-panel {
+  display: flex;
+  padding: 24px 40px 20px;
+  gap: 40px;
+  border-top: 1px solid rgba(255,255,255,0.06);
+}
+.pdf-mode .meta-header {
+  display: block;
+  padding: 18px 40px 0;
+}
+.pdf-mode .meta-header h1 {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--bright);
+  margin: 0;
+}
+.pdf-mode .meta-header .meta-date {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--dim);
+  margin-top: 4px;
+  letter-spacing: 0.5px;
+}
+.pdf-mode .meta-summary {
+  flex: 2;
+}
+.pdf-mode .meta-summary h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--dim);
+  margin-bottom: 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 400;
+}
+.pdf-mode .meta-summary p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--txt);
+}
+.pdf-mode .meta-legend {
+  flex: 1;
+  min-width: 200px;
+}
+.pdf-mode .meta-legend h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--dim);
+  margin-bottom: 8px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 400;
+}
+.pdf-mode .legend-group {
+  margin-bottom: 6px;
+}
+.pdf-mode .legend-group-name {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+.pdf-mode .legend-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.pdf-mode .legend-node {
+  font-size: 12px;
+  color: var(--txt);
+  margin-left: 2px;
+}
+
+/* ── Video mode: full viewport graph ── */
+.video-mode #graph-area { height: 100vh; }
+.video-mode #meta-panel { display: none; }
+.video-mode .meta-header { display: none; }
+
+/* ── Hidden by default ── */
+#meta-panel { display: none; }
+.meta-header { display: none; }
+#graph-area { width: 100%; height: 100vh; position: relative; }
+
+/* ── SVG graph styles (matches bigscreen mode) ── */
+.edge-path {
+  fill: none;
+  stroke: rgba(255,255,255,0.08);
+  stroke-width: 1.5;
+}
+.edge-text {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 300;
+  fill: rgba(255,255,255,0.22);
+  text-anchor: middle;
+  pointer-events: none;
+  letter-spacing: 0.5px;
+}
+.n-aura { opacity: 0.06; }
+.n-outer {
+  fill: none;
+  stroke-width: 1.5;
+  opacity: 0.45;
+}
+.n-inner { opacity: 0.12; }
+.n-dot { opacity: 1; }
+.n-label {
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  font-size: 16px;
+  fill: var(--bright);
+  text-anchor: middle;
+  pointer-events: none;
+  letter-spacing: 0.2px;
+}
+.n-cat {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 300;
+  font-size: 11px;
+  fill: var(--dim);
+  text-anchor: middle;
+  pointer-events: none;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.n-group.pinned .n-outer {
+  stroke-width: 3;
+  opacity: 0.7;
+}
+</style>
+</head>
+<body>
+<div class="meta-header">
+  <h1 id="session-title"></h1>
+  <div class="meta-date" id="session-date"></div>
+</div>
+<div id="graph-area"></div>
+<div id="meta-panel">
+  <div class="meta-summary">
+    <h3>Summary</h3>
+    <p id="session-summary"></p>
+  </div>
+  <div class="meta-legend">
+    <h3>Concepts</h3>
+    <div id="legend-content"></div>
+  </div>
+</div>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+const COLORS = [
+  '#34d399','#a78bfa','#fb7185','#fbbf24','#60a5fa',
+  '#22d3ee','#fb923c','#f0abfc','#2dd4bf','#a3e635'
+];
+const colorMap = {};
+let colorIdx = 0;
+function nodeColor(group) {
+  if (!colorMap[group]) colorMap[group] = COLORS[colorIdx++ % COLORS.length];
+  return colorMap[group];
+}
+
+// Node sizes (bigscreen style)
+const S = { aura: 70, outer: 38, inner: 32, dot: 5, labelDy: 58, catDy: 74 };
+
+let gEdge, gNode, sim, svg;
+let W, H;
+
+function initGraph() {
+  const area = document.getElementById('graph-area');
+  W = area.clientWidth;
+  H = area.clientHeight;
+
+  svg = d3.select(area).append('svg').attr('width', W).attr('height', H);
+
+  const defs = svg.append('defs');
+  const glow = defs.append('filter').attr('id', 'glow');
+  glow.append('feGaussianBlur').attr('stdDeviation', '5');
+  const halo = defs.append('filter').attr('id', 'halo')
+    .attr('x', '-200%').attr('y', '-200%').attr('width', '500%').attr('height', '500%');
+  halo.append('feGaussianBlur').attr('stdDeviation', '30');
+
+  gEdge = svg.append('g');
+  gNode = svg.append('g');
+
+  sim = d3.forceSimulation([])
+    .force('link', d3.forceLink([]).id(d => d.id).distance(280).strength(0.3))
+    .force('charge', d3.forceManyBody().strength(-1000).distanceMax(500))
+    .force('center', d3.forceCenter(W / 2, H / 2).strength(0.03))
+    .force('collide', d3.forceCollide().radius(100).strength(0.8))
+    .force('x', d3.forceX(W / 2).strength(0.015))
+    .force('y', d3.forceY(H / 2).strength(0.015))
+    .alphaDecay(0.02)
+    .velocityDecay(0.4)
+    .on('tick', tick)
+    .stop();
+}
+
+function tick() {
+  gEdge.selectAll('.edge-path').attr('d', d => {
+    const dx = d.target.x - d.source.x;
+    const dy = d.target.y - d.source.y;
+    const dr = Math.sqrt(dx * dx + dy * dy) * 1.5;
+    return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
+  });
+  gEdge.selectAll('.edge-text')
+    .attr('x', d => (d.source.x + d.target.x) / 2 + (d.target.y - d.source.y) * 0.06)
+    .attr('y', d => (d.source.y + d.target.y) / 2 - (d.target.x - d.source.x) * 0.06);
+  gNode.selectAll('.n-group')
+    .attr('transform', d => `translate(${d.x},${d.y})`);
+}
+
+// ── Render a static snapshot (PDF mode) ──
+function renderStatic(graphData, meta) {
+  document.body.classList.add('pdf-mode');
+  initGraph();
+
+  const nodesDict = graphData.nodes || {};
+  const rawEdges = graphData.edges || [];
+
+  const activeNodes = Object.values(nodesDict)
+    .filter(n => n.state === 'active')
+    .map(n => ({
+      id: n.id, label: n.label, group: n.group,
+      importance: n.importance || 0.5, pinned: n.pinned || false,
+      color: nodeColor(n.group),
+    }));
+
+  const activeIds = new Set(activeNodes.map(n => n.id));
+  const edges = rawEdges
+    .filter(e => activeIds.has(e.source) && activeIds.has(e.target))
+    .map(e => ({ source: e.source, target: e.target, label: e.label || '' }));
+
+  // Run simulation to settle
+  sim.nodes(activeNodes);
+  sim.force('link').links(edges);
+  sim.alpha(1);
+  for (let i = 0; i < 300; i++) sim.tick();
+
+  // Render edges
+  const eSel = gEdge.selectAll('.e-group').data(edges).enter().append('g').attr('class', 'e-group');
+  eSel.append('path').attr('class', 'edge-path').attr('d', d => {
+    const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+    const dr = Math.sqrt(dx * dx + dy * dy) * 1.5;
+    return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
+  });
+  eSel.append('text').attr('class', 'edge-text')
+    .attr('x', d => (d.source.x + d.target.x) / 2 + (d.target.y - d.source.y) * 0.06)
+    .attr('y', d => (d.source.y + d.target.y) / 2 - (d.target.x - d.source.x) * 0.06)
+    .text(d => d.label);
+
+  // Render nodes
+  const nSel = gNode.selectAll('.n-group').data(activeNodes).enter().append('g')
+    .attr('class', d => 'n-group' + (d.pinned ? ' pinned' : ''))
+    .attr('transform', d => `translate(${d.x},${d.y})`);
+  nSel.append('circle').attr('class', 'n-aura').attr('r', S.aura).attr('fill', d => d.color).attr('filter', 'url(#halo)');
+  nSel.append('circle').attr('class', 'n-outer').attr('r', S.outer).attr('stroke', d => d.color);
+  nSel.append('circle').attr('class', 'n-inner').attr('r', S.inner).attr('fill', d => d.color);
+  nSel.append('circle').attr('class', 'n-dot').attr('r', S.dot).attr('fill', d => d.color).attr('filter', 'url(#glow)');
+  nSel.append('text').attr('class', 'n-label').attr('dy', S.labelDy).text(d => d.label);
+  nSel.append('text').attr('class', 'n-cat').attr('dy', S.catDy).text(d => d.group);
+
+  // Populate metadata
+  if (meta) {
+    document.getElementById('session-title').textContent = meta.topic || '';
+    document.getElementById('session-date').textContent = meta.date || '';
+    document.getElementById('session-summary').textContent = meta.summary || '';
+    buildLegend(activeNodes);
+  }
+
+  window.__READY__ = true;
+}
+
+// ── Build legend grouped by category ──
+function buildLegend(nodes) {
+  const groups = {};
+  nodes.forEach(n => {
+    if (!groups[n.group]) groups[n.group] = { color: n.color, nodes: [] };
+    groups[n.group].nodes.push(n.label);
+  });
+
+  const container = document.getElementById('legend-content');
+  container.innerHTML = '';
+  for (const [group, data] of Object.entries(groups).sort()) {
+    const div = document.createElement('div');
+    div.className = 'legend-group';
+    div.innerHTML = `<span class="legend-dot" style="background:${data.color}"></span><span class="legend-group-name">${group}</span>: <span class="legend-node">${data.nodes.join(', ')}</span>`;
+    container.appendChild(div);
+  }
+}
+
+// ── Apply snapshot for video mode (with D3 data-join) ──
+let positions = {};
+
+window.__applySnapshot__ = function(graphData) {
+  window.__SETTLED__ = false;
+
+  const nodesDict = graphData.nodes || {};
+  const rawEdges = graphData.edges || [];
+
+  const activeNodes = Object.values(nodesDict)
+    .filter(n => n.state === 'active')
+    .map(n => {
+      const pos = positions[n.id];
+      return {
+        id: n.id, label: n.label, group: n.group,
+        importance: n.importance || 0.5, pinned: n.pinned || false,
+        color: nodeColor(n.group),
+        x: pos ? pos.x : W / 2 + (Math.random() - 0.5) * 200,
+        y: pos ? pos.y : H / 2 + (Math.random() - 0.5) * 200,
+        vx: pos ? pos.vx : 0,
+        vy: pos ? pos.vy : 0,
+      };
+    });
+
+  const activeIds = new Set(activeNodes.map(n => n.id));
+  const edges = rawEdges
+    .filter(e => activeIds.has(e.source) && activeIds.has(e.target))
+    .map(e => ({ source: e.source, target: e.target, label: e.label || '' }));
+
+  // Edges data-join
+  const eData = gEdge.selectAll('.e-group').data(edges, d => d.source.id || d.source + '->' + (d.target.id || d.target));
+  eData.exit().remove();
+  const eEnter = eData.enter().append('g').attr('class', 'e-group');
+  eEnter.append('path').attr('class', 'edge-path');
+  eEnter.append('text').attr('class', 'edge-text').text(d => d.label);
+  eData.select('.edge-text').text(d => d.label);
+
+  // Nodes data-join
+  const nData = gNode.selectAll('.n-group').data(activeNodes, d => d.id);
+  nData.exit().remove();
+  const nEnter = nData.enter().append('g')
+    .attr('class', d => 'n-group' + (d.pinned ? ' pinned' : ''));
+  nEnter.append('circle').attr('class', 'n-aura').attr('r', S.aura).attr('fill', d => d.color).attr('filter', 'url(#halo)');
+  nEnter.append('circle').attr('class', 'n-outer').attr('r', S.outer).attr('stroke', d => d.color);
+  nEnter.append('circle').attr('class', 'n-inner').attr('r', S.inner).attr('fill', d => d.color);
+  nEnter.append('circle').attr('class', 'n-dot').attr('r', S.dot).attr('fill', d => d.color).attr('filter', 'url(#glow)');
+  nEnter.append('text').attr('class', 'n-label').attr('dy', S.labelDy).text(d => d.label);
+  nEnter.append('text').attr('class', 'n-cat').attr('dy', S.catDy).text(d => d.group);
+
+  const merged = nEnter.merge(nData);
+  merged.select('.n-label').text(d => d.label);
+  merged.select('.n-cat').text(d => d.group);
+  merged.select('.n-outer').attr('stroke', d => d.color);
+  merged.select('.n-inner').attr('fill', d => d.color);
+  merged.select('.n-dot').attr('fill', d => d.color);
+  merged.select('.n-aura').attr('fill', d => d.color);
+
+  // Update simulation
+  sim.nodes(activeNodes);
+  sim.force('link').links(edges);
+  sim.alpha(0.4).restart();
+
+  // Settle with ticks
+  for (let i = 0; i < 200; i++) sim.tick();
+  sim.stop();
+  tick(); // final position update
+
+  // Save positions for continuity
+  activeNodes.forEach(n => {
+    positions[n.id] = { x: n.x, y: n.y, vx: n.vx, vy: n.vy };
+  });
+
+  window.__SETTLED__ = true;
+};
+
+// ── Init for video mode ──
+window.__initVideo__ = function() {
+  document.body.classList.add('video-mode');
+  initGraph();
+  window.__READY__ = true;
+};
+
+// Flags for Playwright
+window.__READY__ = false;
+window.__SETTLED__ = false;
+</script>
+</body>
+</html>

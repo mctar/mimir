@@ -112,6 +112,14 @@ def get_stt_config() -> dict:
         return {**_active_stt}
 
 
+def reset_state():
+    """Clear rolling context and dedup caches. Call before replay to avoid cross-contamination."""
+    global _prev_result
+    with _transcript_context_lock:
+        _transcript_context["text"] = ""
+    _prev_result = {"text": "", "time": 0.0}
+
+
 def _resample(audio: np.ndarray, source_rate: int, target_rate: int) -> np.ndarray:
     """Resample audio from source_rate to target_rate using linear interpolation."""
     if source_rate == target_rate:

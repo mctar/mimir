@@ -74,11 +74,13 @@ async def init_db(path: str = DB_PATH):
         if col_name not in existing_cols:
             await _db.execute(f"ALTER TABLE segments ADD COLUMN {col_name} {col_def}")
 
-    # Add archived column to sessions (idempotent)
+    # Add archived and source columns to sessions (idempotent)
     cursor = await _db.execute("PRAGMA table_info(sessions)")
     session_cols = {row[1] for row in await cursor.fetchall()}
     if "archived" not in session_cols:
         await _db.execute("ALTER TABLE sessions ADD COLUMN archived INTEGER DEFAULT 0")
+    if "source" not in session_cols:
+        await _db.execute("ALTER TABLE sessions ADD COLUMN source TEXT DEFAULT 'live'")
 
     # Cross-session synthesis recaps table
     await _db.execute("""
@@ -103,15 +105,15 @@ async def close_db():
         _db = None
 
 
-async def create_session(session_id: str, topic: str = "") -> dict:
-    """Create a new session. Returns session dict."""
+async def create_session(session_id: str, topic: str = "", source: str = "live") -> dict:
+    """Create a new session. source: 'live' or 'replay'. Returns session dict."""
     now = time.time()
     await _db.execute(
-        "INSERT INTO sessions (id, topic, created_at) VALUES (?, ?, ?)",
-        (session_id, topic, now),
+        "INSERT INTO sessions (id, topic, created_at, source) VALUES (?, ?, ?, ?)",
+        (session_id, topic, now, source),
     )
     await _db.commit()
-    return {"id": session_id, "topic": topic, "created_at": now}
+    return {"id": session_id, "topic": topic, "created_at": now, "source": source}
 
 
 async def end_session(session_id: str, summary: str = ""):
@@ -185,6 +187,7 @@ async def list_sessions(archived: bool = False) -> list[dict]:
     cursor = await _db.execute("""
         SELECT s.id, s.topic, s.created_at, s.ended_at, s.summary,
                COALESCE(s.archived, 0) AS archived,
+               COALESCE(s.source, 'live') AS source,
                (SELECT COUNT(*) FROM segments WHERE session_id = s.id AND is_partial = 0) AS segment_count,
                (SELECT SUM(LENGTH(text)) FROM segments WHERE session_id = s.id AND is_partial = 0) AS total_chars,
                (SELECT COUNT(*) FROM snapshots WHERE session_id = s.id) AS snapshot_count,

@@ -405,6 +405,79 @@ async def get_session_snapshots_endpoint(session_id: str):
     })
 
 
+_export_tasks: dict[str, dict] = {}  # session_id -> {task, status, path, error}
+
+@app.post("/v1/sessions/{session_id}/export/{fmt}")
+async def start_export(session_id: str, fmt: str, request: Request):
+    """Start a PDF or video export. Returns immediately; poll status endpoint."""
+    if fmt not in ("pdf", "video"):
+        return JSONResponse({"error": "Format must be 'pdf' or 'video'"}, status_code=400)
+
+    task_key = f"{session_id}_{fmt}"
+    if task_key in _export_tasks and _export_tasks[task_key].get("status") == "running":
+        return JSONResponse({"status": "running", "message": "Export already in progress"})
+
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        pass
+
+    import tempfile
+    ext = "pdf" if fmt == "pdf" else "mp4"
+    outfile = os.path.join(tempfile.gettempdir(), f"mimir-{session_id}.{ext}")
+
+    _export_tasks[task_key] = {"status": "running", "path": outfile, "error": None}
+
+    async def run_export():
+        try:
+            from export import export_pdf, export_video
+            if fmt == "pdf":
+                await export_pdf(session_id, outfile)
+            else:
+                await export_video(
+                    session_id, outfile,
+                    fps=body.get("fps", 10),
+                    speed=body.get("speed", 1.0),
+                    max_hold=body.get("max_hold", 3.0),
+                )
+            _export_tasks[task_key]["status"] = "done"
+        except Exception as e:
+            _export_tasks[task_key]["status"] = "error"
+            _export_tasks[task_key]["error"] = str(e)
+            print(f"Export error ({fmt} {session_id}): {e}", file=sys.stderr)
+
+    asyncio.create_task(run_export())
+    return JSONResponse({"status": "started", "format": fmt})
+
+
+@app.get("/v1/sessions/{session_id}/export/{fmt}/status")
+async def export_status(session_id: str, fmt: str):
+    """Check export status."""
+    task_key = f"{session_id}_{fmt}"
+    info = _export_tasks.get(task_key)
+    if not info:
+        return JSONResponse({"status": "not_found"}, status_code=404)
+    return JSONResponse({"status": info["status"], "error": info.get("error")})
+
+
+@app.get("/v1/sessions/{session_id}/export/{fmt}/download")
+async def download_export(session_id: str, fmt: str):
+    """Download the exported file."""
+    task_key = f"{session_id}_{fmt}"
+    info = _export_tasks.get(task_key)
+    if not info or info["status"] != "done":
+        return JSONResponse({"error": "Export not ready"}, status_code=404)
+
+    ext = "pdf" if fmt == "pdf" else "mp4"
+    media = "application/pdf" if fmt == "pdf" else "video/mp4"
+    return FileResponse(
+        info["path"],
+        media_type=media,
+        filename=f"mimir-{session_id}.{ext}",
+    )
+
+
 @app.get("/v1/sessions/{session_id}")
 async def get_session_detail(session_id: str):
     """Get session detail: transcript, final snapshot, and recap."""
@@ -1175,7 +1248,7 @@ async def _call_hugin(body: dict) -> tuple[int, dict]:
     """Translate Anthropic-format request to OpenAI-compatible, call Hugin,
     translate response back to Anthropic format."""
     with _active_llm_lock:
-        model = _active_llm["model"]
+        model = body.get("model") or _active_llm["model"]
 
     # Build OpenAI-compatible messages from Anthropic format
     oai_messages = []
@@ -1236,7 +1309,7 @@ async def _call_gemini(body: dict) -> tuple[int, dict]:
     """Translate Anthropic-format request to OpenAI-compatible, call Gemini,
     translate response back to Anthropic format."""
     with _active_llm_lock:
-        model = _active_llm["model"]
+        model = body.get("model") or _active_llm["model"]
 
     # Build OpenAI-compatible messages
     oai_messages = []
