@@ -182,6 +182,24 @@ async def store_action(session_id: str, action_type: str, payload: dict):
     await _db.commit()
 
 
+async def get_session(session_id: str) -> dict | None:
+    """Fetch a single session's metadata by id, regardless of archive state.
+    Returns the same shape as list_sessions() entries."""
+    cursor = await _db.execute("""
+        SELECT s.id, s.topic, s.created_at, s.ended_at, s.summary,
+               COALESCE(s.archived, 0) AS archived,
+               COALESCE(s.source, 'live') AS source,
+               (SELECT COUNT(*) FROM segments WHERE session_id = s.id AND is_partial = 0) AS segment_count,
+               (SELECT SUM(LENGTH(text)) FROM segments WHERE session_id = s.id AND is_partial = 0) AS total_chars,
+               (SELECT COUNT(*) FROM snapshots WHERE session_id = s.id) AS snapshot_count,
+               (SELECT COUNT(*) FROM recaps WHERE session_id = s.id) AS has_recap
+        FROM sessions s
+        WHERE s.id = ?
+    """, (session_id,))
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
 async def list_sessions(archived: bool = False) -> list[dict]:
     """List sessions with computed metadata. archived=True returns archived sessions."""
     cursor = await _db.execute("""

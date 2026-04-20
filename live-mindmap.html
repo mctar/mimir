@@ -418,6 +418,71 @@ body {
   padding: 10px 18px;
 }
 
+/* ========== VERDIGRIS STYLE (single-ink discipline, ?style=verdigris) ========== */
+.verdigris {
+  --bg: #060E0B;
+  --mimir-primary:   #0F6E56;
+  --mimir-bright:    #5DCAA5;
+  --mimir-brightest: #9FE1CB;
+  --mimir-text-dim:  #3A7A64;
+}
+.verdigris.bigscreen { --bg: #060E0B; }
+.verdigris #canvas { background: var(--bg); }
+.verdigris .atmo { display: none; }
+
+.verdigris .edge-path {
+  stroke: var(--mimir-primary);
+}
+.verdigris .edge-text {
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  fill: var(--mimir-text-dim);
+  letter-spacing: 0.08em;
+}
+
+/* Repurpose n-aura as the body fill (kills edge bleed-through) */
+.verdigris .n-aura {
+  opacity: 1;
+  filter: none;
+}
+.verdigris .n-group.born .n-aura {
+  animation: none;
+  opacity: 1;
+}
+
+.verdigris .n-outer {
+  stroke: var(--mimir-primary);
+  fill: none;
+  opacity: 1;
+}
+.verdigris .n-inner {
+  stroke: var(--mimir-bright);
+  fill: none;
+  opacity: 1;
+}
+.verdigris .n-dot {
+  opacity: 1;
+  filter: none;
+}
+.verdigris .n-label {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-weight: 400;
+  fill: var(--mimir-brightest);
+  letter-spacing: 0;
+}
+.verdigris .n-cat {
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  fill: var(--mimir-text-dim);
+  letter-spacing: 0.08em;
+}
+.verdigris .n-group.pinned .n-outer {
+  stroke: var(--mimir-brightest);
+  opacity: 1;
+}
+.verdigris .n-group.merge-source .n-outer {
+  stroke: var(--mimir-brightest);
+  stroke-dasharray: 4 2;
+}
+
 /* Big screen mode indicator */
 #mode-badge {
   position: absolute; top: 24px; right: 24px;
@@ -530,9 +595,14 @@ const G = {
   _ctxNode: null,
   // Display mode
   bigscreen: true,
+  // Visual style — 'verdigris' (default) or 'classic' (via ?style=classic)
+  style: (new URLSearchParams(location.search).get('style') || 'verdigris'),
   // Reset generation — bumped on every reset to discard stale analysis results
   _gen: 0,
 };
+if (G.style === 'verdigris') {
+  document.getElementById('app').classList.add('verdigris');
+}
 
 // ─── Session API ───
 // Session lifecycle is managed by the monitor view.
@@ -1030,6 +1100,13 @@ function render() {
   eEnter.append('text').attr('class','edge-text').text(d => d.label);
   eEnter.transition().duration(800).style('opacity',1);
   eData.select('.edge-text').text(d => d.label);
+  if (G.style === 'verdigris') {
+    const es = G.bigscreen ? BS.big : BS.normal;
+    const etok = nodeTokens(es.outer);
+    gEdge.selectAll('.edge-path')
+      .attr('stroke-width', etok.edgeStroke)
+      .attr('stroke-opacity', etok.edgeOpacity);
+  }
 
   // ── Nodes ──
   const nData = gNode.selectAll('.n-group').data(G.nodes, d => d.id);
@@ -1055,16 +1132,34 @@ function render() {
     });
 
   const s = G.bigscreen ? BS.big : BS.normal;
-  nEnter.append('circle').attr('class','n-aura')
-    .attr('r', s.aura).attr('fill', d=>d.color).attr('filter','url(#halo)');
-  nEnter.append('circle').attr('class','n-outer')
-    .attr('r', s.outer).attr('stroke', d=>d.color);
-  nEnter.append('circle').attr('class','n-inner')
-    .attr('r', s.inner).attr('fill', d=>d.color);
-  nEnter.append('circle').attr('class','n-dot')
-    .attr('r', s.dot).attr('fill', d=>d.color).attr('filter','url(#glow)');
-  nEnter.append('text').attr('class','n-label').attr('dy', s.labelDy).text(d=>d.label);
-  nEnter.append('text').attr('class','n-cat').attr('dy', s.catDy).text(d=>d.group);
+  const verdigris = G.style === 'verdigris';
+  const tok = verdigris ? nodeTokens(s.outer) : null;
+
+  if (verdigris) {
+    nEnter.append('circle').attr('class','n-aura')
+      .attr('r', s.outer - 1).attr('fill', MIMIR_TOKENS.bg);
+    nEnter.append('circle').attr('class','n-outer')
+      .attr('r', s.outer).attr('stroke', MIMIR_TOKENS.primary).attr('stroke-width', tok.outerStroke);
+    nEnter.append('circle').attr('class','n-inner')
+      .attr('r', tok.innerR).attr('stroke', MIMIR_TOKENS.bright).attr('stroke-width', tok.innerStroke);
+    nEnter.append('circle').attr('class','n-dot')
+      .attr('r', tok.dotR).attr('fill', d=>dotColor(d.group));
+    nEnter.append('text').attr('class','n-label')
+      .attr('dy', tok.nameDy).attr('font-size', tok.nameFontSize).text(d=>d.label);
+    nEnter.append('text').attr('class','n-cat')
+      .attr('dy', tok.catDy).attr('font-size', tok.catFontSize).text(d=>d.group);
+  } else {
+    nEnter.append('circle').attr('class','n-aura')
+      .attr('r', s.aura).attr('fill', d=>d.color).attr('filter','url(#halo)');
+    nEnter.append('circle').attr('class','n-outer')
+      .attr('r', s.outer).attr('stroke', d=>d.color);
+    nEnter.append('circle').attr('class','n-inner')
+      .attr('r', s.inner).attr('fill', d=>d.color);
+    nEnter.append('circle').attr('class','n-dot')
+      .attr('r', s.dot).attr('fill', d=>d.color).attr('filter','url(#glow)');
+    nEnter.append('text').attr('class','n-label').attr('dy', s.labelDy).text(d=>d.label);
+    nEnter.append('text').attr('class','n-cat').attr('dy', s.catDy).text(d=>d.group);
+  }
 
   nEnter.filter(d=>d.isNew).transition().duration(700).ease(d3.easeCubicOut).style('opacity',1);
 
@@ -1077,10 +1172,14 @@ function render() {
   const merged = nEnter.merge(nData);
   merged.select('.n-label').text(d=>d.label);
   merged.select('.n-cat').text(d=>d.group);
-  merged.select('.n-outer').attr('stroke', d=>d.color);
-  merged.select('.n-inner').attr('fill', d=>d.color);
-  merged.select('.n-dot').attr('fill', d=>d.color);
-  merged.select('.n-aura').attr('fill', d=>d.color);
+  if (verdigris) {
+    merged.select('.n-dot').attr('fill', d=>dotColor(d.group));
+  } else {
+    merged.select('.n-outer').attr('stroke', d=>d.color);
+    merged.select('.n-inner').attr('fill', d=>d.color);
+    merged.select('.n-dot').attr('fill', d=>d.color);
+    merged.select('.n-aura').attr('fill', d=>d.color);
+  }
   merged.classed('pinned', d => d.pinned);
 
   sim.nodes(G.nodes);
@@ -1138,6 +1237,44 @@ const BS = {
   big:    { aura: 70, outer: 38, inner: 32, dot: 5, labelDy: 58, catDy: 74, linkDist: 280, charge: -1000, collide: 100 },
 };
 
+// ─── Verdigris style (scale-aware single-ink, gated by ?style=verdigris) ───
+const MIMIR_TOKENS = {
+  primary:   '#0F6E56',
+  bright:    '#5DCAA5',
+  brightest: '#9FE1CB',
+  textDim:   '#3A7A64',
+  bg:        '#060E0B',
+};
+const DOT_COLORS = {
+  MEMORY:      '#A78BFA',
+  LOGISTICS:   '#FCD34D',
+  PEOPLE:      '#FB7185',
+  TECHNOLOGY:  '#22D3EE',
+  CULTURE:     '#F97316',
+  POLITICS:    '#F87171',
+  GEOPOLITICS: '#60A5FA',
+  UPDATES:     '#94A3B8',
+};
+function nodeTokens(R) {
+  const s = R / 24;
+  return {
+    outerStroke:  2.0 * s,
+    innerR:       R * 0.82,
+    innerStroke:  0.6 * s,
+    dotR:         4 * s,
+    nameFontSize: 11 * s,
+    catFontSize:  8 * s,
+    nameDy:       R + 14 * s,
+    catDy:        R + 24 * s,
+    edgeStroke:   1 * s,
+    edgeOpacity:  Math.min(0.7, 0.45 + 0.15 * (s - 1)),
+  };
+}
+function dotColor(group) {
+  const key = (group || '').toUpperCase();
+  return DOT_COLORS[key] || DOT_COLORS.UPDATES;
+}
+
 function toggleBigScreen() {
   G.bigscreen = !G.bigscreen;
   document.getElementById('app').classList.toggle('bigscreen', G.bigscreen);
@@ -1154,12 +1291,25 @@ function toggleBigScreen() {
   sim.force('collide').radius(s.collide);
 
   // Update all existing node elements
-  gNode.selectAll('.n-aura').attr('r', s.aura);
-  gNode.selectAll('.n-outer').attr('r', s.outer);
-  gNode.selectAll('.n-inner').attr('r', s.inner);
-  gNode.selectAll('.n-dot').attr('r', s.dot);
-  gNode.selectAll('.n-label').attr('dy', s.labelDy);
-  gNode.selectAll('.n-cat').attr('dy', s.catDy);
+  if (G.style === 'verdigris') {
+    const tok = nodeTokens(s.outer);
+    gNode.selectAll('.n-aura').attr('r', s.outer - 1);
+    gNode.selectAll('.n-outer').attr('r', s.outer).attr('stroke-width', tok.outerStroke);
+    gNode.selectAll('.n-inner').attr('r', tok.innerR).attr('stroke-width', tok.innerStroke);
+    gNode.selectAll('.n-dot').attr('r', tok.dotR);
+    gNode.selectAll('.n-label').attr('dy', tok.nameDy).attr('font-size', tok.nameFontSize);
+    gNode.selectAll('.n-cat').attr('dy', tok.catDy).attr('font-size', tok.catFontSize);
+    gEdge.selectAll('.edge-path')
+      .attr('stroke-width', tok.edgeStroke)
+      .attr('stroke-opacity', tok.edgeOpacity);
+  } else {
+    gNode.selectAll('.n-aura').attr('r', s.aura);
+    gNode.selectAll('.n-outer').attr('r', s.outer);
+    gNode.selectAll('.n-inner').attr('r', s.inner);
+    gNode.selectAll('.n-dot').attr('r', s.dot);
+    gNode.selectAll('.n-label').attr('dy', s.labelDy);
+    gNode.selectAll('.n-cat').attr('dy', s.catDy);
+  }
 
   sim.alpha(0.3).restart();
 }
@@ -1171,6 +1321,7 @@ document.addEventListener('keydown', e => {
 
 // ─── Ambient breathing ───
 setInterval(() => {
+  if (G.style === 'verdigris') return;  // verdigris is still — single-ink discipline
   document.querySelectorAll('.atmo').forEach(el => {
     el.style.transform = `translate(${(Math.random()-.5)*50}px, ${(Math.random()-.5)*50}px)`;
     el.style.opacity = 0.04 + Math.random() * 0.06;

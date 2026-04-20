@@ -42,11 +42,48 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 # ─── Remote STT ───
 STT_SERVER_URL = os.environ.get("STT_SERVER_URL", "https://stt.btrbot.com")
 
-# Active LLM config — mutable at runtime via admin panel
-_active_llm = {
-    "provider": "hugin",             # "anthropic" | "hugin" | "gemini"
-    "model": "gemma4:26b",
-}
+# LLM fallback chain — ordered list of tiers, tried in order.
+# First tier is primary; each subsequent tier is a fallback.
+# Mutable at runtime via /v1/llm/active.
+_VALID_PROVIDERS = ("hugin", "gemini", "anthropic")
+
+def _default_chain() -> list[dict]:
+    """Build the default LLM fallback chain from whichever providers have
+    credentials configured at startup. Order is: local (Hugin) → Gemini →
+    Anthropic. Anthropic is last-resort because it's the slowest link to
+    reach over the public internet and the most expensive per token."""
+    chain: list[dict] = []
+    if HUGIN_BASE_URL:
+        chain.append({"provider": "hugin",     "model": "gemma4:26b"})
+    if GEMINI_API_KEY:
+        chain.append({"provider": "gemini",    "model": "gemini-2.5-flash"})
+    if ANTHROPIC_API_KEY:
+        chain.append({"provider": "anthropic", "model": "claude-sonnet-4-20250514"})
+    if not chain:
+        # No credentials at all — keep Hugin as a placeholder so the server
+        # still boots; calls will fail closed with a clear error.
+        chain.append({"provider": "hugin", "model": "gemma4:26b"})
+    return chain
+
+
+_llm_chain: list[dict] = _default_chain()
+_llm_chain_lock = threading.Lock()
+_last_serving_provider: str = ""
+
+# Back-compat alias: some code paths (replay.py) still import _active_llm /
+# _active_llm_lock. Expose them as views onto the head of the chain.
+_active_llm_lock = _llm_chain_lock
+class _ActiveLLMView:
+    def __getitem__(self, key):
+        with _llm_chain_lock:
+            return _llm_chain[0][key]
+    def get(self, key, default=None):
+        with _llm_chain_lock:
+            return _llm_chain[0].get(key, default)
+    def __iter__(self):
+        with _llm_chain_lock:
+            return iter(dict(_llm_chain[0]))
+_active_llm = _ActiveLLMView()
 
 # Extra system prompt for non-Claude models to improve graph quality
 _SMALL_MODEL_GRAPH_PREFIX = """CRITICAL: Output ONLY the raw JSON object. No thinking, no reasoning, no explanation, no markdown fences.
@@ -61,7 +98,6 @@ GRAPH EVOLUTION (follow strictly):
 - Use "group" field (not "type") for node category
 
 """
-_active_llm_lock = threading.Lock()
 
 # ─── Global state ───
 transcript_queue: queue.Queue = queue.Queue()
@@ -112,6 +148,12 @@ metrics_lock = threading.Lock()
 _activity_log: list[dict] = []  # capped at 50 entries
 _activity_lock = threading.Lock()
 
+# In-flight transcript cleaning jobs, keyed by session_id. Each entry tracks
+# progress so the frontend can poll instead of waiting on a single long
+# request — the cloudflare tunnel would otherwise kill it at ~100s.
+_clean_jobs: dict[str, dict] = {}
+_clean_jobs_lock = threading.Lock()
+
 def log_activity(event_type: str, session_id: str = "", status: str = "started", detail: str = ""):
     """Log a post-session operation (recap, clean-transcript, synthesis)."""
     entry = {"type": event_type, "session_id": session_id, "status": status, "detail": detail, "timestamp": time.time()}
@@ -120,14 +162,87 @@ def log_activity(event_type: str, session_id: str = "", status: str = "started",
         if len(_activity_log) > 50:
             _activity_log.pop(0)
 
-# Circuit breaker
-cb_state = "closed"
-cb_failures = 0
-cb_backoff_until = 0.0
-cb_backoff_secs = 5.0
+# Per-provider circuit breakers. Each tier in the chain has its own state so
+# one provider tripping doesn't lock the others out.
 CB_MAX_BACKOFF = 60.0
 CB_FAILURE_THRESHOLD = 3
-cb_lock = threading.Lock()
+_cb_lock = threading.Lock()
+_cb: dict[str, dict] = {
+    p: {"state": "closed", "failures": 0, "backoff_until": 0.0, "backoff_secs": 5.0}
+    for p in _VALID_PROVIDERS
+}
+
+
+def _cb_can_attempt(provider: str) -> bool:
+    """Return True if the provider's breaker permits an attempt.
+    Transitions open→half_open when backoff has elapsed."""
+    now = time.time()
+    with _cb_lock:
+        s = _cb[provider]
+        if s["state"] == "open":
+            if now < s["backoff_until"]:
+                return False
+            s["state"] = "half_open"
+        return True
+
+
+def _cb_record_success(provider: str) -> None:
+    with _cb_lock:
+        s = _cb[provider]
+        s["state"] = "closed"
+        s["failures"] = 0
+        s["backoff_secs"] = 5.0
+        s["backoff_until"] = 0.0
+
+
+def _cb_record_failure(provider: str, hard: bool = False) -> None:
+    """Record a failed attempt. hard=True trips the breaker immediately
+    (e.g. 429 rate limit); otherwise opens after CB_FAILURE_THRESHOLD."""
+    with _cb_lock:
+        s = _cb[provider]
+        s["failures"] += 1
+        if hard or s["failures"] >= CB_FAILURE_THRESHOLD:
+            s["state"] = "open"
+            s["backoff_secs"] = min(s["backoff_secs"] * 2, CB_MAX_BACKOFF)
+            s["backoff_until"] = time.time() + s["backoff_secs"]
+
+
+def _cb_snapshot() -> list[dict]:
+    """Return a serializable snapshot of every tier's breaker state,
+    in chain order."""
+    now = time.time()
+    with _llm_chain_lock:
+        chain = [dict(t) for t in _llm_chain]
+    with _cb_lock:
+        out = []
+        for tier in chain:
+            p = tier["provider"]
+            s = _cb.get(p, {})
+            out.append({
+                "provider": p,
+                "model": tier["model"],
+                "state": s.get("state", "closed"),
+                "failures": s.get("failures", 0),
+                "retry_in": max(0.0, s.get("backoff_until", 0.0) - now),
+            })
+        return out
+
+
+def _cb_summary_state() -> str:
+    """Overall breaker health: 'closed' if any tier is attempting,
+    'degraded' if primary is open but a fallback is attempting,
+    'open' if every tier is open."""
+    with _cb_lock:
+        states = [_cb[p]["state"] for p in _VALID_PROVIDERS]
+    if all(s == "open" for s in states):
+        return "open"
+    with _llm_chain_lock:
+        primary = _llm_chain[0]["provider"] if _llm_chain else ""
+    with _cb_lock:
+        primary_state = _cb.get(primary, {}).get("state", "closed")
+    if primary_state != "closed":
+        return "degraded"
+    return "closed"
 
 # Monotonic sequence counter for transcript messages
 _seq_counter = 0
@@ -137,6 +252,21 @@ _seq_lock = threading.Lock()
 reconciler = GraphReconciler()
 _current_session_id: str | None = None
 _summary: str = ""
+
+# Monotonic session-generation counter. Bumped every time /v1/sessions/new or
+# /v1/sessions/{id}/end resets state. In-flight _proxy_claude tasks capture it
+# at request time; if it has changed by the time the LLM call returns, the
+# response is stale and must be discarded (otherwise a late response can
+# repopulate the reconciler with nodes from the previous session).
+_session_gen: int = 0
+_session_gen_lock = threading.Lock()
+
+
+def _bump_session_gen() -> int:
+    global _session_gen
+    with _session_gen_lock:
+        _session_gen += 1
+        return _session_gen
 
 
 def _next_seq() -> int:
@@ -262,6 +392,14 @@ async def new_session(request: Request):
     global _current_session_id, _summary, _seq_counter
     body = await request.json() if request.headers.get("content-length", "0") != "0" else {}
     topic = body.get("topic", "")
+
+    # Bump the session generation FIRST, so any in-flight _proxy_claude task
+    # that resumes during our awaits below will see a newer gen and discard
+    # its response. Without this, a late LLM response can race with the
+    # reconciler clear and repopulate it with stale nodes from the previous
+    # session.
+    _bump_session_gen()
+
     # End current session
     if _current_session_id:
         if reconciler.nodes:
@@ -283,7 +421,7 @@ async def new_session(request: Request):
             break
     # Reset session metrics
     with metrics_lock:
-        keep = {"started_at", "ws_clients", "cb_state", "cb_failures"}
+        keep = {"started_at", "ws_clients", "cb_state", "cb_failures", "llm_tiers", "llm_serving"}
         for k, v in metrics.items():
             if k not in keep:
                 if isinstance(v, (int, float)):
@@ -295,6 +433,14 @@ async def new_session(request: Request):
     session_id = str(uuid.uuid4())[:8]
     session = await db.create_session(session_id, topic)
     _current_session_id = session_id
+    # Belt-and-braces: re-clear reconciler AFTER the create_session await, in
+    # case a racing _proxy_claude resumed during the yield and repopulated it.
+    # The gen-bump above should already have caused such tasks to discard, but
+    # this closes the window with zero cost.
+    reconciler.nodes.clear()
+    reconciler.edges.clear()
+    reconciler._mention_log.clear()
+    reconciler._churn_log.clear()
     # Notify all connected frontends
     msg = json.dumps({"type": "session_reset", "session_id": session_id, "topic": topic})
     for ws in list(connected_clients):
@@ -311,6 +457,8 @@ async def end_session(session_id: str, request: Request):
     global _current_session_id, _summary, _seq_counter
     body = await request.json() if request.headers.get("content-length", "0") != "0" else {}
     summary = body.get("summary", _summary)
+    # Invalidate any in-flight LLM responses before we touch reconciler state.
+    _bump_session_gen()
     # Final snapshot
     if reconciler.nodes:
         await db.store_snapshot(session_id, _seq_counter, reconciler.get_full_state(), "end")
@@ -437,8 +585,7 @@ async def start_export(session_id: str, fmt: str, request: Request):
             else:
                 await export_video(
                     session_id, outfile,
-                    fps=body.get("fps", 10),
-                    speed=body.get("speed", 1.0),
+                    speed=body.get("speed", 2.0),
                     max_hold=body.get("max_hold", 3.0),
                 )
             _export_tasks[task_key]["status"] = "done"
@@ -480,13 +627,14 @@ async def download_export(session_id: str, fmt: str):
 
 @app.get("/v1/sessions/{session_id}")
 async def get_session_detail(session_id: str):
-    """Get session detail: transcript, final snapshot, and recap."""
+    """Get session detail: transcript, final snapshot, and recap.
+    Works for both live and archived sessions."""
+    session_meta = await db.get_session(session_id)
+    if session_meta is None:
+        return JSONResponse({"error": f"Session {session_id} not found"}, status_code=404)
     transcript = await db.get_session_transcript(session_id)
     snapshot = await db.get_latest_snapshot(session_id)
     recap = await db.get_recap(session_id)
-    # Also fetch session metadata
-    sessions = await db.list_sessions()
-    session_meta = next((s for s in sessions if s["id"] == session_id), None)
     return JSONResponse({
         "session": session_meta,
         "transcript": transcript,
@@ -673,13 +821,80 @@ Rules:
 
 # ─── Transcript cleaning ───
 
+@app.get("/v1/sessions/{session_id}/clean-transcript/status")
+async def clean_transcript_status(session_id: str):
+    """Return the current state of an in-flight (or recently finished) clean
+    job for this session. Frontend polls this while a job is running."""
+    with _clean_jobs_lock:
+        job = _clean_jobs.get(session_id)
+        snapshot = dict(job) if job else None
+    if snapshot is None:
+        return JSONResponse({"status": "idle"})
+    return JSONResponse(snapshot)
+
+
 @app.post("/v1/sessions/{session_id}/clean-transcript")
 async def clean_transcript(session_id: str):
-    """Clean transcript segments using LLM to fix obvious STT errors."""
-    log_activity("clean", session_id, "started")
+    """Kick off a transcript-cleaning job in the background. Returns 202
+    immediately so the cloudflare tunnel doesn't time out; the frontend
+    polls /clean-transcript/status for progress."""
+    # Refuse if a job is already running for this session
+    with _clean_jobs_lock:
+        existing = _clean_jobs.get(session_id)
+        if existing and existing.get("status") == "running":
+            return JSONResponse(
+                {"status": "running", "progress": existing.get("progress", {})},
+                status_code=202,
+            )
+
     segments = await db.get_session_transcript(session_id)
     if not segments:
         return JSONResponse({"error": "No transcript found"}, status_code=404)
+
+    # Record an initial job state and fire the background task
+    with _clean_jobs_lock:
+        _clean_jobs[session_id] = {
+            "status": "running",
+            "progress": {"done": 0, "total": 0},
+            "started_at": time.time(),
+        }
+    asyncio.create_task(_run_clean_job(session_id, segments))
+    return JSONResponse({"status": "running", "progress": {"done": 0, "total": 0}}, status_code=202)
+
+
+async def _run_clean_job(session_id: str, segments: list[dict]):
+    """Background worker for clean-transcript. Updates _clean_jobs as it
+    progresses. Never raises — all errors land in the job state."""
+    try:
+        result = await _clean_transcript_impl(session_id, segments)
+        with _clean_jobs_lock:
+            _clean_jobs[session_id] = {
+                "status": "done",
+                "result": result,
+                "finished_at": time.time(),
+            }
+    except Exception as e:
+        print(f"  Clean job {session_id} crashed: {type(e).__name__}: {e}", file=sys.stderr)
+        log_activity("clean", session_id, "error", f"{type(e).__name__}: {e}")
+        with _clean_jobs_lock:
+            _clean_jobs[session_id] = {
+                "status": "error",
+                "error": f"{type(e).__name__}: {e}",
+                "finished_at": time.time(),
+            }
+
+
+def _clean_job_progress(session_id: str, done: int, total: int):
+    with _clean_jobs_lock:
+        job = _clean_jobs.get(session_id)
+        if job and job.get("status") == "running":
+            job["progress"] = {"done": done, "total": total}
+
+
+async def _clean_transcript_impl(session_id: str, segments: list[dict]) -> dict:
+    """The actual cleaning work. Separated from the HTTP layer so it can run
+    as a background task."""
+    log_activity("clean", session_id, "started")
 
     # Detect language from segments
     lang_counts: dict[str, int] = {}
@@ -746,17 +961,23 @@ Rules:
 - Return ONLY a JSON array of strings, one per segment: ["cleaned segment 1", "cleaned segment 2", ...]
 - Do NOT add any explanation, just the JSON array"""
 
-    # Process in chunks of 40 segments
+    # Process in chunks. We use gemma4:26b (proven ~15-30s per call under live
+    # load) rather than 31b, and cap concurrency so we don't queue requests
+    # behind each other on Hugin's side.
     CHUNK_SIZE = 40
-    all_cleaned = []
-    model = "gemma4:31b"
+    CHUNK_TIMEOUT = 120
+    MAX_CONCURRENCY = 3
+    model = "gemma4:26b"
 
-    for i in range(0, len(segments), CHUNK_SIZE):
-        chunk = segments[i:i + CHUNK_SIZE]
+    chunks = [segments[i:i + CHUNK_SIZE] for i in range(0, len(segments), CHUNK_SIZE)]
+    sem = asyncio.Semaphore(MAX_CONCURRENCY)
+
+    async def clean_one(idx: int, chunk: list[dict]) -> tuple[int, list[dict], str | None]:
+        """Clean a single chunk. Returns (idx, cleaned_items, error_msg).
+        On any failure, falls back to originals and reports the error — never
+        raises, so one chunk can't abort the whole run."""
         texts = [seg["text"] for seg in chunk]
-
         user_prompt = "Clean these transcript segments:\n" + json.dumps(texts, ensure_ascii=False)
-
         ollama_body = {
             "model": model,
             "messages": [
@@ -766,73 +987,99 @@ Rules:
             "stream": False,
             "think": False,
             "format": "json",
-            "options": {
-                "temperature": 0,
-                "num_predict": 4096,
-            },
+            "options": {"temperature": 0, "num_predict": 4096},
         }
+        fallback = [{"seq": seg["seq"], "cleaned_text": seg["text"]} for seg in chunk]
+
+        async with sem:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        f"{HUGIN_BASE_URL}/api/chat",
+                        headers={"Content-Type": "application/json"},
+                        json=ollama_body,
+                        timeout=aiohttp.ClientTimeout(total=CHUNK_TIMEOUT),
+                        ssl=False,
+                    ) as resp:
+                        if resp.status != 200:
+                            body = await resp.text()
+                            return idx, fallback, f"http {resp.status}: {body[:200]}"
+                        data = await resp.json()
+            except asyncio.TimeoutError:
+                return idx, fallback, f"timeout after {CHUNK_TIMEOUT}s"
+            except Exception as e:
+                return idx, fallback, f"{type(e).__name__}: {e}"
+
+        raw_text = data.get("message", {}).get("content", "")
+        cleaned_str = raw_text.strip()
+        if cleaned_str.startswith("```"):
+            cleaned_str = cleaned_str.split("\n", 1)[1] if "\n" in cleaned_str else cleaned_str[3:]
+        if cleaned_str.endswith("```"):
+            cleaned_str = cleaned_str[:-3]
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{HUGIN_BASE_URL}/api/chat",
-                    headers={"Content-Type": "application/json"},
-                    json=ollama_body,
-                    timeout=aiohttp.ClientTimeout(total=180),
-                    ssl=False,
-                ) as resp:
-                    data = await resp.json()
-                    if resp.status != 200:
-                        err = data.get("error", "") or str(data)
-                        return JSONResponse({"error": f"Ollama error on chunk {i // CHUNK_SIZE + 1}: {err}"}, status_code=502)
-
-            raw_text = data.get("message", {}).get("content", "")
-            cleaned = raw_text.strip()
-            if cleaned.startswith("```"):
-                cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-
-            parsed = json.loads(cleaned.strip())
-
-            # Handle both array format and object-with-array format
-            if isinstance(parsed, dict):
-                # LLM might wrap in an object — find the array
-                for v in parsed.values():
-                    if isinstance(v, list):
-                        parsed = v
-                        break
-
-            if not isinstance(parsed, list) or len(parsed) != len(chunk):
-                print(f"  Clean chunk {i // CHUNK_SIZE + 1}: expected {len(chunk)} items, got {len(parsed) if isinstance(parsed, list) else 'non-list'}", file=sys.stderr)
-                # Fall back to originals for this chunk
-                all_cleaned.extend([{"seq": seg["seq"], "cleaned_text": seg["text"]} for seg in chunk])
-                continue
-
-            for j, seg in enumerate(chunk):
-                ct = parsed[j] if isinstance(parsed[j], str) else seg["text"]
-                all_cleaned.append({"seq": seg["seq"], "cleaned_text": ct})
-
+            parsed = json.loads(cleaned_str.strip())
         except json.JSONDecodeError as e:
-            print(f"  Clean chunk {i // CHUNK_SIZE + 1} parse error: {e}", file=sys.stderr)
-            all_cleaned.extend([{"seq": seg["seq"], "cleaned_text": seg["text"]} for seg in chunk])
-        except Exception as e:
-            return JSONResponse({"error": f"Chunk {i // CHUNK_SIZE + 1}: {type(e).__name__}: {e}"}, status_code=500)
+            return idx, fallback, f"json parse: {e}"
 
-    # Store all cleaned segments
+        # LLM may wrap the array in an object — unwrap if so
+        if isinstance(parsed, dict):
+            for v in parsed.values():
+                if isinstance(v, list):
+                    parsed = v
+                    break
+
+        if not isinstance(parsed, list) or len(parsed) != len(chunk):
+            got = len(parsed) if isinstance(parsed, list) else "non-list"
+            return idx, fallback, f"length mismatch: expected {len(chunk)} got {got}"
+
+        items = []
+        for j, seg in enumerate(chunk):
+            ct = parsed[j] if isinstance(parsed[j], str) else seg["text"]
+            items.append({"seq": seg["seq"], "cleaned_text": ct})
+        return idx, items, None
+
+    # Initial progress state now that we know how many chunks we have
+    total_chunks = len(chunks)
+    done_count = 0
+    _clean_job_progress(session_id, done_count, total_chunks)
+
+    # Launch all chunks as tasks, reporting progress as they complete.
+    # The semaphore caps real concurrency; the gather just lets us observe
+    # completions for UI updates.
+    tasks = [asyncio.create_task(clean_one(i, c)) for i, c in enumerate(chunks)]
+    results: list[tuple[int, list[dict], str | None]] = []
+    for fut in asyncio.as_completed(tasks):
+        r = await fut
+        results.append(r)
+        done_count += 1
+        _clean_job_progress(session_id, done_count, total_chunks)
+
+    results.sort(key=lambda r: r[0])
+    all_cleaned: list[dict] = []
+    failed_chunks: list[dict] = []
+    for idx, items, err in results:
+        all_cleaned.extend(items)
+        if err:
+            print(f"  Clean chunk {idx + 1}: {err}", file=sys.stderr)
+            failed_chunks.append({"chunk": idx + 1, "error": err})
+
     await db.store_cleaned_segments(session_id, all_cleaned)
 
-    # Count how many actually changed
     changed = sum(1 for c, seg in zip(all_cleaned, segments) if c["cleaned_text"] != seg["text"])
 
-    log_activity("clean", session_id, "completed", f"{changed}/{len(segments)} changed, model={model}")
+    status_detail = f"{changed}/{len(segments)} changed, model={model}"
+    if failed_chunks:
+        status_detail += f", {len(failed_chunks)} chunks failed"
+    log_activity("clean", session_id, "completed", status_detail)
 
-    return JSONResponse({
+    return {
         "ok": True,
         "total_segments": len(segments),
         "changed": changed,
         "model": model,
-    })
+        "failed_chunks": failed_chunks,
+    }
 
 
 # ─── Cross-session synthesis ───
@@ -1022,9 +1269,12 @@ async def get_metrics_rest():
     m.update(churn)
     m["current_session_id"] = _current_session_id
     m["active_nodes"] = len([ns for ns in reconciler.nodes.values() if ns.state == "active"])
-    with _active_llm_lock:
-        m["llm_provider"] = _active_llm["provider"]
-        m["llm_model"] = _active_llm["model"]
+    with _llm_chain_lock:
+        head = dict(_llm_chain[0]) if _llm_chain else {"provider": "", "model": ""}
+    m["llm_provider"] = head.get("provider", "")
+    m["llm_model"] = head.get("model", "")
+    m["llm_tiers"] = _cb_snapshot()
+    m["llm_serving"] = _last_serving_provider
     stt = get_stt_config()
     m["stt_backend"] = stt["backend"]
     m["stt_remote_url"] = stt.get("remote_url", "")
@@ -1088,35 +1338,96 @@ async def list_llm_providers():
             "available": True,
         }
 
-    with _active_llm_lock:
-        active = {**_active_llm}
-    return JSONResponse({"providers": providers, "active": active})
+    with _llm_chain_lock:
+        chain = [dict(t) for t in _llm_chain]
+    tiers_state = _cb_snapshot()
+    return JSONResponse({
+        "providers": providers,
+        "chain": chain,
+        "tiers": tiers_state,
+        "serving": _last_serving_provider,
+        # Back-compat: legacy clients still read `active`.
+        "active": chain[0] if chain else {},
+    })
+
+
+def _validate_tier(tier: dict) -> str | None:
+    """Return None if OK, else error string."""
+    provider = (tier.get("provider") or "").strip()
+    model = (tier.get("model") or "").strip()
+    if provider not in _VALID_PROVIDERS:
+        return f"Unknown provider: {provider}"
+    if not model:
+        return "Model is required"
+    if provider == "hugin" and not HUGIN_BASE_URL:
+        return "HUGIN_BASE_URL not configured"
+    if provider == "gemini" and not GEMINI_API_KEY:
+        return "Gemini API key not configured"
+    if provider == "anthropic" and not ANTHROPIC_API_KEY:
+        return "Anthropic API key not configured"
+    return None
 
 
 @app.post("/v1/llm/active")
 async def set_active_llm(request: Request):
-    """Switch the active LLM provider and model."""
+    """Update the LLM fallback chain.
+
+    Accepts:
+      - {"chain": [{"provider": "...", "model": "..."}, ...]} — replace the
+        full chain. Order is priority (first is primary).
+      - {"provider": "...", "model": "..."} — back-compat: update that
+        provider's tier in-place (or add it as primary if not yet present).
+    """
     body = await request.json()
-    provider = body.get("provider", "").strip()
-    model = body.get("model", "").strip()
 
-    valid_providers = {"anthropic", "hugin", "gemini"}
-    if provider not in valid_providers:
-        return JSONResponse({"error": f"Unknown provider: {provider}"}, status_code=400)
-    if not model:
-        return JSONResponse({"error": "Model is required"}, status_code=400)
-    if provider == "hugin" and not HUGIN_BASE_URL:
-        return JSONResponse({"error": "HUGIN_BASE_URL not configured"}, status_code=400)
-    if provider == "gemini" and not GEMINI_API_KEY:
-        return JSONResponse({"error": "Gemini API key not configured"}, status_code=400)
+    if isinstance(body.get("chain"), list):
+        new_chain: list[dict] = []
+        seen: set[str] = set()
+        for raw in body["chain"]:
+            if not isinstance(raw, dict):
+                return JSONResponse({"error": "chain entries must be objects"}, status_code=400)
+            err = _validate_tier(raw)
+            if err:
+                return JSONResponse({"error": err}, status_code=400)
+            p = raw["provider"].strip()
+            m = raw["model"].strip()
+            if p in seen:
+                return JSONResponse({"error": f"duplicate provider in chain: {p}"}, status_code=400)
+            seen.add(p)
+            new_chain.append({"provider": p, "model": m})
+        if not new_chain:
+            return JSONResponse({"error": "chain must not be empty"}, status_code=400)
 
-    with _active_llm_lock:
-        old = {**_active_llm}
-        _active_llm["provider"] = provider
-        _active_llm["model"] = model
+        with _llm_chain_lock:
+            old = [dict(t) for t in _llm_chain]
+            _llm_chain.clear()
+            _llm_chain.extend(new_chain)
 
-    print(f"  LLM switched: {old['provider']}/{old['model']} → {provider}/{model}")
-    return JSONResponse({"active": {"provider": provider, "model": model}})
+        print(f"  LLM chain: {[f'{t['provider']}/{t['model']}' for t in old]} → {[f'{t['provider']}/{t['model']}' for t in new_chain]}")
+        _publish_llm_state()
+        return JSONResponse({"chain": new_chain, "tiers": _cb_snapshot()})
+
+    # Back-compat single-tier update
+    provider = (body.get("provider") or "").strip()
+    model = (body.get("model") or "").strip()
+    err = _validate_tier({"provider": provider, "model": model})
+    if err:
+        return JSONResponse({"error": err}, status_code=400)
+
+    with _llm_chain_lock:
+        found = False
+        for tier in _llm_chain:
+            if tier["provider"] == provider:
+                tier["model"] = model
+                found = True
+                break
+        if not found:
+            _llm_chain.insert(0, {"provider": provider, "model": model})
+        new_chain = [dict(t) for t in _llm_chain]
+
+    print(f"  LLM chain: updated tier {provider} → {model}")
+    _publish_llm_state()
+    return JSONResponse({"chain": new_chain, "active": {"provider": provider, "model": model}})
 
 
 # ─── STT backend endpoints ───
@@ -1229,8 +1540,12 @@ def _extract_usage(data: dict, provider: str) -> dict:
 
 # ─── LLM proxy ───
 async def _call_anthropic(body: dict) -> tuple[int, dict]:
-    """POST to Anthropic Messages API. Returns (status, response_dict)."""
-    async with aiohttp.ClientSession() as session:
+    """POST to Anthropic Messages API. Returns (status, response_dict).
+    Bounded timeout so a dead Anthropic endpoint can't stall the chain."""
+    if not ANTHROPIC_API_KEY:
+        return 503, {"error": {"message": "Anthropic: no API key configured"}}
+    timeout = aiohttp.ClientTimeout(total=60, connect=5)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
         async with session.post(
             "https://api.anthropic.com/v1/messages",
             headers={
@@ -1247,8 +1562,7 @@ async def _call_anthropic(body: dict) -> tuple[int, dict]:
 async def _call_hugin(body: dict) -> tuple[int, dict]:
     """Translate Anthropic-format request to OpenAI-compatible, call Hugin,
     translate response back to Anthropic format."""
-    with _active_llm_lock:
-        model = body.get("model") or _active_llm["model"]
+    model = body.get("model") or ""
 
     # Build OpenAI-compatible messages from Anthropic format
     oai_messages = []
@@ -1308,8 +1622,7 @@ async def _call_hugin(body: dict) -> tuple[int, dict]:
 async def _call_gemini(body: dict) -> tuple[int, dict]:
     """Translate Anthropic-format request to OpenAI-compatible, call Gemini,
     translate response back to Anthropic format."""
-    with _active_llm_lock:
-        model = body.get("model") or _active_llm["model"]
+    model = body.get("model") or ""
 
     # Build OpenAI-compatible messages
     oai_messages = []
@@ -1425,84 +1738,157 @@ async def _broadcast_llm_response(status_code, data, req_id):
             pass
 
 
+async def _call_provider(provider: str, body: dict) -> tuple[int, dict]:
+    """Dispatch a single LLM call to the named provider."""
+    if provider == "hugin":
+        return await _call_hugin(body)
+    if provider == "gemini":
+        return await _call_gemini(body)
+    if provider == "anthropic":
+        return await _call_anthropic(body)
+    return 400, {"error": {"message": f"unknown provider: {provider}"}}
+
+
+async def call_llm_chain(body: dict) -> tuple[int, dict, str, str]:
+    """Walk the configured LLM chain in order. For each tier whose circuit
+    breaker permits an attempt, try the call. Return on first 200. On any
+    failure record the tier's breaker and try the next tier.
+
+    Returns (status, data, served_by_provider, served_by_model). If every
+    tier failed, served_by_provider is "" and data holds the last error.
+    """
+    global _last_serving_provider
+
+    with _llm_chain_lock:
+        chain = [dict(t) for t in _llm_chain]
+
+    last_status = 503
+    last_data: dict = {"error": {"message": "No LLM tiers configured"}}
+    attempts: list[str] = []
+
+    for tier in chain:
+        provider = tier["provider"]
+        model = tier["model"]
+
+        if not _cb_can_attempt(provider):
+            attempts.append(f"{provider}:skip(breaker)")
+            continue
+
+        tier_body = dict(body)
+        tier_body["model"] = model
+        t0 = time.time()
+        try:
+            status, data = await _call_provider(provider, tier_body)
+        except asyncio.TimeoutError:
+            dt = time.time() - t0
+            print(f"  LLM [{provider}]: TIMEOUT after {dt:.1f}s", file=sys.stderr)
+            _cb_record_failure(provider)
+            attempts.append(f"{provider}:timeout")
+            last_status = 504
+            last_data = {"error": {"message": f"{provider}: timeout"}}
+            continue
+        except Exception as e:
+            dt = time.time() - t0
+            print(f"  LLM [{provider}]: EXCEPTION ({dt:.1f}s) — {type(e).__name__}: {e}", file=sys.stderr)
+            _cb_record_failure(provider)
+            attempts.append(f"{provider}:{type(e).__name__}")
+            last_status = 500
+            last_data = {"error": {"message": f"{provider}: {type(e).__name__}: {e}"}}
+            continue
+
+        dt = time.time() - t0
+
+        if status == 200:
+            _cb_record_success(provider)
+            _last_serving_provider = provider
+            if attempts:
+                print(f"  LLM chain: demoted through [{', '.join(attempts)}] → served by {provider}/{model} ({dt:.1f}s)")
+            return status, data, provider, model
+
+        # Non-200: record failure and try the next tier.
+        err_msg = ""
+        if isinstance(data, dict):
+            err = data.get("error")
+            if isinstance(err, dict):
+                err_msg = err.get("message", "")
+            elif isinstance(err, str):
+                err_msg = err
+        hard = (status == 429)
+        _cb_record_failure(provider, hard=hard)
+        attempts.append(f"{provider}:{status}")
+        print(f"  LLM [{provider}]: {status} ({dt:.1f}s) — {err_msg}", file=sys.stderr)
+        last_status = status
+        last_data = data
+
+    print(f"  LLM chain: ALL TIERS FAILED — [{', '.join(attempts)}]", file=sys.stderr)
+    return last_status, last_data, "", ""
+
+
+def _publish_llm_state() -> None:
+    """Copy chain + breaker state into the metrics dict so the monitor can
+    render a live view of which tier is currently serving."""
+    tiers = _cb_snapshot()
+    with metrics_lock:
+        metrics["llm_tiers"] = tiers
+        metrics["llm_serving"] = _last_serving_provider
+        metrics["cb_state"] = _cb_summary_state()
+        total_failures = sum(t.get("failures", 0) for t in tiers)
+        metrics["cb_failures"] = total_failures
+
+
 async def _proxy_claude(websocket: WebSocket, req: dict):
-    """Proxy an LLM request server-side with circuit breaker."""
-    global cb_state, cb_failures, cb_backoff_until, cb_backoff_secs, _summary
-    # Capture session at request time — discard results if session changed
+    """Proxy an LLM request server-side, walking the fallback chain."""
+    global _summary
     _req_session_id = _current_session_id
-
-    with cb_lock:
-        now = time.time()
-        if cb_state == "open":
-            if now < cb_backoff_until:
-                wait = cb_backoff_until - now
-                print(f"  LLM: circuit breaker OPEN, retry in {wait:.0f}s", file=sys.stderr)
-                with metrics_lock:
-                    metrics["cb_state"] = "open"
-                await _broadcast_llm_response(503,
-                    {"error": "Circuit breaker open", "retry_after": wait},
-                    req.get("req_id"))
-                return
-            else:
-                cb_state = "half_open"
-                print("  LLM: circuit breaker half_open, testing...")
-                with metrics_lock:
-                    metrics["cb_state"] = "half_open"
-
-    # Determine provider and inject server-side model
-    with _active_llm_lock:
-        provider = _active_llm["provider"]
-        model = _active_llm["model"]
+    _req_gen = _session_gen
 
     t0 = time.time()
     try:
         body = req.get("body", {})
-        body["model"] = model  # server overrides client model
-
-        if provider == "hugin":
-            status_code, data = await _call_hugin(body)
-        elif provider == "gemini":
-            status_code, data = await _call_gemini(body)
-        else:
-            status_code, data = await _call_anthropic(body)
-
+        status_code, data, provider, model = await call_llm_chain(body)
         dt = time.time() - t0
 
-        # Extract token usage and calculate cost
-        usage = _extract_usage(data, provider)
-        pricing = _LLM_PRICING.get(model, _DEFAULT_PRICING)
-        call_cost = (usage["input"] * pricing[0] + usage["output"] * pricing[1]) / 1_000_000
+        # Token usage / cost attributed to whichever tier actually served.
+        if provider and model:
+            usage = _extract_usage(data, provider)
+            pricing = _LLM_PRICING.get(model, _DEFAULT_PRICING)
+            call_cost = (usage["input"] * pricing[0] + usage["output"] * pricing[1]) / 1_000_000
+        else:
+            usage = {"input": 0, "output": 0}
+            call_cost = 0.0
 
         with metrics_lock:
             metrics["claude_calls"] += 1
             metrics["claude_last_duration"] = dt
             metrics["claude_total_time"] += dt
             metrics["claude_avg_duration"] = metrics["claude_total_time"] / metrics["claude_calls"]
-            metrics["llm_input_tokens"] = metrics.get("llm_input_tokens", 0) + usage["input"]
-            metrics["llm_output_tokens"] = metrics.get("llm_output_tokens", 0) + usage["output"]
-            metrics["llm_session_cost"] = metrics.get("llm_session_cost", 0.0) + call_cost
-            metrics["llm_last_cost"] = call_cost
-            metrics["llm_last_input_tokens"] = usage["input"]
-            metrics["llm_last_output_tokens"] = usage["output"]
+            if provider:
+                metrics["llm_input_tokens"] = metrics.get("llm_input_tokens", 0) + usage["input"]
+                metrics["llm_output_tokens"] = metrics.get("llm_output_tokens", 0) + usage["output"]
+                metrics["llm_session_cost"] = metrics.get("llm_session_cost", 0.0) + call_cost
+                metrics["llm_last_cost"] = call_cost
+                metrics["llm_last_input_tokens"] = usage["input"]
+                metrics["llm_last_output_tokens"] = usage["output"]
+
+        _publish_llm_state()
 
         if status_code == 200:
             cost_str = f"${call_cost:.4f}" if call_cost > 0 else "free"
             print(f"  LLM [{provider}/{model}]: 200 OK ({dt:.1f}s, {usage['input']}+{usage['output']} tok, {cost_str})")
-            with cb_lock:
-                cb_state = "closed"
-                cb_failures = 0
-                cb_backoff_secs = 5.0
             with metrics_lock:
-                metrics["cb_state"] = "closed"
-                metrics["cb_failures"] = 0
                 metrics["claude_last_error"] = ""
 
-            # Run reconciler on LLM response
             try:
                 raw_text = "".join(c.get("text", "") for c in data.get("content", []))
                 parsed = _extract_graph_json(raw_text)
                 if parsed.get("nodes") and parsed.get("edges") is not None:
-                    # Discard if session changed while LLM was processing
+                    # Generation check catches the None→None race that the
+                    # session_id check alone can't: if a session reset happened
+                    # while the LLM was responding, _session_gen has advanced
+                    # and we must discard this response.
+                    if _session_gen != _req_gen:
+                        print(f"  LLM: discarding stale response (gen {_req_gen} → {_session_gen}, session {_req_session_id} → {_current_session_id})")
+                        return
                     if _current_session_id != _req_session_id:
                         print(f"  LLM: discarding stale response (session changed {_req_session_id} → {_current_session_id})")
                         return
@@ -1530,7 +1916,6 @@ async def _proxy_claude(websocket: WebSocket, req: dict):
                         metrics["llm_last_node_count"] = len(parsed.get("nodes", []))
                     print(f"  LLM: parsed {len(parsed['nodes'])} nodes, {len(parsed.get('edges',[]))} edges (reconciler: {n_before}→{n_after})")
 
-                    # Broadcast reconciled graph to all clients as graph_update
                     graph_msg = json.dumps({"type": "graph_update", "graph": graph, "session_id": _current_session_id})
                     for ws in list(connected_clients):
                         try:
@@ -1547,59 +1932,27 @@ async def _proxy_claude(websocket: WebSocket, req: dict):
                 with metrics_lock:
                     metrics["llm_parse_fail"] = metrics.get("llm_parse_fail", 0) + 1
                     metrics["llm_last_raw_fail"] = raw_text[:500]
-
-        elif status_code == 429:
-            err_msg = data.get("error", {}).get("message", "Rate limited")
-            print(f"  LLM: 429 RATE LIMITED ({dt:.1f}s) — {err_msg}", file=sys.stderr)
-            with cb_lock:
-                cb_state = "open"
-                cb_backoff_secs = min(cb_backoff_secs * 2, CB_MAX_BACKOFF)
-                cb_backoff_until = time.time() + cb_backoff_secs
-                cb_failures += 1
-            with metrics_lock:
-                metrics["claude_errors"] += 1
-                metrics["cb_state"] = "open"
-                metrics["cb_failures"] = cb_failures
-                metrics["claude_last_error"] = f"429: {err_msg}"
-
-        elif status_code >= 500:
-            err_msg = data.get("error", {}).get("message", f"Server error {status_code}")
-            print(f"  LLM: {status_code} SERVER ERROR ({dt:.1f}s) — {err_msg}", file=sys.stderr)
-            with cb_lock:
-                cb_failures += 1
-                if cb_failures >= CB_FAILURE_THRESHOLD:
-                    cb_state = "open"
-                    cb_backoff_secs = min(cb_backoff_secs * 2, CB_MAX_BACKOFF)
-                    cb_backoff_until = time.time() + cb_backoff_secs
-            with metrics_lock:
-                metrics["claude_errors"] += 1
-                metrics["cb_state"] = cb_state
-                metrics["cb_failures"] = cb_failures
-                metrics["claude_last_error"] = f"{status_code}: {err_msg}"
-
         else:
-            err_msg = data.get("error", {}).get("message", f"HTTP {status_code}")
-            print(f"  LLM: {status_code} ERROR ({dt:.1f}s) — {err_msg}", file=sys.stderr)
+            err_msg = ""
+            if isinstance(data, dict):
+                err = data.get("error")
+                if isinstance(err, dict):
+                    err_msg = err.get("message", "")
+                elif isinstance(err, str):
+                    err_msg = err
             with metrics_lock:
                 metrics["claude_errors"] += 1
-                metrics["claude_last_error"] = f"{status_code}: {err_msg}"
+                metrics["claude_last_error"] = f"{status_code}: {err_msg or 'chain exhausted'}"
 
         await _broadcast_llm_response(status_code, data, req.get("req_id"))
     except Exception as e:
         dt = time.time() - t0
-        print(f"  LLM: EXCEPTION ({dt:.1f}s) — {type(e).__name__}: {e}", file=sys.stderr)
-        with cb_lock:
-            cb_failures += 1
-            if cb_failures >= CB_FAILURE_THRESHOLD:
-                cb_state = "open"
-                cb_backoff_secs = min(cb_backoff_secs * 2, CB_MAX_BACKOFF)
-                cb_backoff_until = time.time() + cb_backoff_secs
+        print(f"  LLM: EXCEPTION in proxy ({dt:.1f}s) — {type(e).__name__}: {e}", file=sys.stderr)
         with metrics_lock:
             metrics["claude_calls"] += 1
             metrics["claude_errors"] += 1
-            metrics["cb_state"] = cb_state
-            metrics["cb_failures"] = cb_failures
             metrics["claude_last_error"] = f"{type(e).__name__}: {e}"
+        _publish_llm_state()
         await _broadcast_llm_response(500, {"error": str(e)}, req.get("req_id"))
 
 
@@ -1687,9 +2040,12 @@ async def ws_endpoint(websocket: WebSocket):
                 m.update(churn)
                 m["current_session_id"] = _current_session_id
                 m["active_nodes"] = len([ns for ns in reconciler.nodes.values() if ns.state == "active"])
-                with _active_llm_lock:
-                    m["llm_provider"] = _active_llm["provider"]
-                    m["llm_model"] = _active_llm["model"]
+                with _llm_chain_lock:
+                    head = dict(_llm_chain[0]) if _llm_chain else {"provider": "", "model": ""}
+                m["llm_provider"] = head.get("provider", "")
+                m["llm_model"] = head.get("model", "")
+                m["llm_tiers"] = _cb_snapshot()
+                m["llm_serving"] = _last_serving_provider
                 stt = get_stt_config()
                 m["stt_backend"] = stt["backend"]
                 m["stt_remote_url"] = stt.get("remote_url", "")

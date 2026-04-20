@@ -212,15 +212,21 @@ async def replay_file(
     # Reset STT state to avoid cross-contamination
     stt_worker.reset_state()
 
-    # Resolve LLM config
-    from app import _active_llm, _active_llm_lock
-    from app import _call_hugin, _call_gemini, _call_anthropic, _extract_graph_json
+    # Resolve LLM config. Replay can either pin a single tier (via the
+    # --llm-provider / --llm-model flags) or walk the server's full chain.
+    from app import call_llm_chain, _llm_chain, _llm_chain_lock, _extract_graph_json
 
-    with _active_llm_lock:
-        provider = llm_provider or _active_llm["provider"]
-        model = llm_model or _active_llm["model"]
-
-    print(f"  LLM: {provider}/{model}")
+    pinned = bool(llm_provider)
+    if pinned:
+        provider = llm_provider
+        model = llm_model or ""
+        print(f"  LLM: pinned to {provider}/{model or '(default)'}")
+    else:
+        with _llm_chain_lock:
+            chain_desc = [f"{t['provider']}/{t['model']}" for t in _llm_chain]
+        provider = ""
+        model = ""
+        print(f"  LLM chain: {' → '.join(chain_desc)}")
     print(f"  STT: {stt_worker.get_stt_config()['backend']}")
     print()
 
@@ -256,15 +262,16 @@ async def replay_file(
         # Trigger analysis when enough text accumulated
         if pipeline.has_enough(analysis_min_chars):
             body = pipeline.build_prompt(reconciler)
-            body["model"] = model
+            if model:
+                body["model"] = model
 
             try:
-                if provider == "hugin":
-                    status_code, data = await _call_hugin(body)
-                elif provider == "gemini":
-                    status_code, data = await _call_gemini(body)
+                if pinned:
+                    from app import _call_provider
+                    status_code, data = await _call_provider(provider, body)
+                    served_by = provider
                 else:
-                    status_code, data = await _call_anthropic(body)
+                    status_code, data, served_by, _ = await call_llm_chain(body)
 
                 if status_code == 200:
                     raw_text = "".join(c.get("text", "") for c in data.get("content", []))
@@ -291,15 +298,15 @@ async def replay_file(
     # Final analysis pass on any remaining text
     if pipeline.has_enough(1):
         body = pipeline.build_prompt(reconciler)
-        body["model"] = model
+        if model:
+            body["model"] = model
 
         try:
-            if provider == "hugin":
-                status_code, data = await _call_hugin(body)
-            elif provider == "gemini":
-                status_code, data = await _call_gemini(body)
+            if pinned:
+                from app import _call_provider
+                status_code, data = await _call_provider(provider, body)
             else:
-                status_code, data = await _call_anthropic(body)
+                status_code, data, _, _ = await call_llm_chain(body)
 
             if status_code == 200:
                 raw_text = "".join(c.get("text", "") for c in data.get("content", []))

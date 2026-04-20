@@ -1,7 +1,33 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
-livemind.db
+
+# Environment
 .env
+
+# SQLite
+*.db
 *.db-journal
 *.db-wal
+*.db-shm
+
+# Session data / exports
+export_sessions/
+*_export.zip
+
+# Audio / media
+*.m4a
+*.mp3
+*.wav
+
+# Transcripts (session data)
+*-transcript.txt
+
+# Specs / internal docs
+specs/
+*-spec.md
+*-spec-*.md
+
+# Claude Code
+.claude/

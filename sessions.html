@@ -972,7 +972,16 @@ function renderList() {
 async function openSession(id) {
   try {
     const resp = await fetch(`/v1/sessions/${id}`);
-    current = await resp.json();
+    if (!resp.ok) {
+      toast(`Session ${id} not found`, true);
+      return;
+    }
+    const data = await resp.json();
+    if (!data || !data.session) {
+      toast(`Session ${id} has no metadata`, true);
+      return;
+    }
+    current = data;
     renderDetail();
     document.getElementById('list-view').style.display = 'none';
     document.getElementById('synth-view').style.display = 'none';
@@ -1477,25 +1486,53 @@ function renderTranscript() {
 
 async function cleanTranscript() {
   if (!current) return;
+  const sid = current.session.id;
   const btn = document.getElementById('btn-clean-transcript');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Cleaning...';
 
+  const setBtn = (label) => { btn.innerHTML = '<span class="spinner"></span> ' + label; };
+
   try {
-    const resp = await fetch(`/v1/sessions/${current.session.id}/clean-transcript`, {
+    // Kick off the job (returns 202 immediately)
+    const start = await fetch(`/v1/sessions/${sid}/clean-transcript`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
     });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || 'Cleaning failed');
-    toast(`Transcript cleaned: ${data.changed} of ${data.total_segments} segments updated`);
+    if (!start.ok && start.status !== 202) {
+      const err = await start.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to start (HTTP ${start.status})`);
+    }
+
+    // Poll status every 2s until done or error
+    let result = null;
+    while (true) {
+      await new Promise(r => setTimeout(r, 2000));
+      const s = await fetch(`/v1/sessions/${sid}/clean-transcript/status`);
+      if (!s.ok) throw new Error(`Status poll failed (HTTP ${s.status})`);
+      const js = await s.json();
+      if (js.status === 'running') {
+        const p = js.progress || {};
+        if (p.total) setBtn(`Cleaning ${p.done || 0}/${p.total}...`);
+      } else if (js.status === 'done') {
+        result = js.result || {};
+        break;
+      } else if (js.status === 'error') {
+        throw new Error(js.error || 'Cleaning job crashed');
+      } else if (js.status === 'idle') {
+        throw new Error('Cleaning job disappeared');
+      }
+    }
+
+    const failN = (result.failed_chunks || []).length;
+    const base = `Transcript cleaned: ${result.changed} of ${result.total_segments} segments updated`;
+    toast(failN ? `${base} (${failN} chunks skipped)` : base);
 
     // Reload session data to get cleaned_text
-    const resp2 = await fetch(`/v1/sessions/${current.session.id}`);
+    const resp2 = await fetch(`/v1/sessions/${sid}`);
     current = await resp2.json();
     switchTab('transcript');
     renderTranscript();
-    // Scroll to first changed segment
     const firstChanged = document.querySelector('.seg-changed');
     if (firstChanged) firstChanged.scrollIntoView({behavior: 'smooth', block: 'center'});
   } catch (e) {

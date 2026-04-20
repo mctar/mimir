@@ -432,6 +432,84 @@ select option {
   margin-top: 2px;
 }
 
+/* ========== LLM CHAIN ========== */
+.llm-tier {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--card);
+  border: 1px solid var(--bdr);
+  border-radius: 6px;
+  margin-bottom: 4px;
+  transition: all .2s;
+}
+.llm-tier.serving {
+  border-color: rgba(52,211,153,0.4);
+  background: rgba(52,211,153,0.06);
+}
+.llm-tier.breaker-open {
+  border-color: rgba(251,113,133,0.4);
+  background: rgba(251,113,133,0.04);
+  opacity: 0.7;
+}
+.llm-tier.breaker-half_open {
+  border-color: rgba(251,191,36,0.4);
+  background: rgba(251,191,36,0.04);
+}
+.llm-rank {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 10px;
+  color: var(--dim);
+  width: 14px;
+  text-align: center;
+}
+.llm-tier-info {
+  flex: 1;
+  min-width: 0;
+}
+.llm-tier-name {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--txt);
+}
+.llm-tier-note {
+  font-size: 11px;
+  color: var(--dim);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.llm-badge {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+.llm-badge.serving {
+  color: var(--green);
+  background: rgba(52,211,153,0.12);
+  border: 1px solid rgba(52,211,153,0.4);
+}
+.llm-badge.open {
+  color: var(--rose);
+  background: rgba(251,113,133,0.12);
+  border: 1px solid rgba(251,113,133,0.4);
+}
+.llm-badge.half_open {
+  color: var(--amber);
+  background: rgba(251,191,36,0.12);
+  border: 1px solid rgba(251,191,36,0.4);
+}
+.llm-badge.standby {
+  color: var(--dim);
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--bdr);
+}
+
 /* ========== SESSION CONTROLS ========== */
 .session-btns {
   display: flex;
@@ -754,23 +832,8 @@ select option {
       <div class="sec-label">STT Backend</div>
       <div class="stt-options" id="stt-options"></div>
 
-      <div class="sec-label">LLM</div>
-      <div class="stt-options" id="llm-options">
-        <div class="stt-option active" data-llm="hugin:gemma4:26b" onclick="switchLLMOption(this)">
-          <input type="radio" name="llm" value="hugin:gemma4:26b" checked>
-          <div class="stt-option-info">
-            <div class="stt-option-name">Gemma 4 26B</div>
-            <div class="stt-option-note">Local (Ollama)</div>
-          </div>
-        </div>
-        <div class="stt-option" data-llm="gemini:gemini-2.5-flash" onclick="switchLLMOption(this)">
-          <input type="radio" name="llm" value="gemini:gemini-2.5-flash">
-          <div class="stt-option-info">
-            <div class="stt-option-name">Gemini Flash 2.5</div>
-            <div class="stt-option-note">Cloud fallback</div>
-          </div>
-        </div>
-      </div>
+      <div class="sec-label">LLM Chain <span id="llm-chain-state" class="s-label" style="float:right;font-size:10px;"></span></div>
+      <div id="llm-tiers"></div>
     </div>
 
     <!-- RIGHT: GRAPH MIRROR -->
@@ -1060,10 +1123,28 @@ function updateMetrics(m) {
   const cost = m.llm_session_cost || 0;
   el('m-cost').textContent = '$' + cost.toFixed(4);
 
-  // Circuit breaker
+  // Circuit breaker (aggregated across the chain)
   const cbState = m.cb_state || 'closed';
   el('m-cb').textContent = cbState;
   el('m-cb').style.color = cbState === 'closed' ? '' : cbState === 'open' ? 'var(--rose)' : 'var(--amber)';
+
+  // LLM chain — render tier list with serving badge + breaker state
+  if (Array.isArray(m.llm_tiers)) {
+    renderLLMTiers(m.llm_tiers, m.llm_serving || '');
+    const label = el('llm-chain-state');
+    if (label) {
+      if (cbState === 'open') {
+        label.textContent = 'ALL TIERS DOWN';
+        label.style.color = 'var(--rose)';
+      } else if (cbState === 'degraded') {
+        label.textContent = 'degraded';
+        label.style.color = 'var(--amber)';
+      } else {
+        label.textContent = '';
+        label.style.color = '';
+      }
+    }
+  }
 
   // FPS
   el('m-fps').textContent = m.frontend_fps ? Math.round(m.frontend_fps) : '--';
@@ -1455,27 +1536,58 @@ async function switchSTT(backend) {
   }
 }
 
-async function switchLLMOption(el) {
-  const val = el.dataset.llm;
-  const provider = val.split(':')[0];
-  const model = val.split(':').slice(1).join(':');
+const LLM_LABELS = {
+  hugin:     {name: 'Hugin',          note: 'Local (Ollama)'},
+  gemini:    {name: 'Gemini Flash',   note: 'Google cloud'},
+  anthropic: {name: 'Claude',         note: 'Anthropic cloud'},
+};
 
-  // Update UI
-  document.querySelectorAll('#llm-options .stt-option').forEach(opt => {
-    opt.classList.toggle('active', opt === el);
-    const radio = opt.querySelector('input[type="radio"]');
-    if (radio) radio.checked = opt === el;
+function renderLLMTiers(tiers, serving) {
+  const wrap = el('llm-tiers');
+  if (!wrap) return;
+  const sigParts = tiers.map(t => `${t.provider}:${t.model}:${t.state}:${t.failures}`);
+  sigParts.push(`serving=${serving}`);
+  const sig = sigParts.join('|');
+  if (wrap.dataset.sig === sig) return;
+  wrap.dataset.sig = sig;
+
+  wrap.innerHTML = '';
+  tiers.forEach((tier, i) => {
+    const isServing = tier.provider === serving && tier.state !== 'open';
+    const row = document.createElement('div');
+    row.className = 'llm-tier';
+    if (isServing) row.classList.add('serving');
+    if (tier.state === 'open') row.classList.add('breaker-open');
+    else if (tier.state === 'half_open') row.classList.add('breaker-half_open');
+
+    const meta = LLM_LABELS[tier.provider] || {name: tier.provider, note: ''};
+
+    let badgeClass, badgeText;
+    if (isServing) {
+      badgeClass = 'serving';
+      badgeText = 'serving';
+    } else if (tier.state === 'open') {
+      const retry = tier.retry_in > 0 ? ` ${Math.ceil(tier.retry_in)}s` : '';
+      badgeClass = 'open';
+      badgeText = 'open' + retry;
+    } else if (tier.state === 'half_open') {
+      badgeClass = 'half_open';
+      badgeText = 'probing';
+    } else {
+      badgeClass = 'standby';
+      badgeText = i === 0 ? 'primary' : 'standby';
+    }
+
+    row.innerHTML = `
+      <div class="llm-rank">${i + 1}</div>
+      <div class="llm-tier-info">
+        <div class="llm-tier-name">${meta.name} <span style="color:var(--dim);font-weight:normal;">${tier.model}</span></div>
+        <div class="llm-tier-note">${meta.note}${tier.failures > 0 ? ' · ' + tier.failures + ' failures' : ''}</div>
+      </div>
+      <span class="llm-badge ${badgeClass}">${badgeText}</span>
+    `;
+    wrap.appendChild(row);
   });
-
-  try {
-    await fetch('/v1/llm/active', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({provider, model}),
-    });
-  } catch(e) {
-    console.warn('LLM switch failed:', e);
-  }
 }
 
 // ════════════════════════════════════════════
@@ -1665,14 +1777,8 @@ async function startSession() {
     });
   } catch(e) { console.warn('STT config failed:', e); }
 
-  // Apply LLM (default: Gemma 4 26B local)
-  try {
-    await fetch('/v1/llm/active', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({provider: 'hugin', model: 'gemma4:26b'}),
-    });
-  } catch(e) { console.warn('LLM config failed:', e); }
+  // LLM chain is managed server-side (see /v1/llm/providers); no per-session
+  // POST required. Monitor renders chain status from metrics.
 
   // Create session
   try {
