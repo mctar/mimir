@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Corpus documentaire – Mimir</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d1124;
+      --panel:    #111827;
+      --card:     rgba(255,255,255,.04);
+      --primary:  #0058AB;
+      --accent:   #1DB8F2;
+      --text:     #d4d6e0;
+      --dim:      #6b7280;
+      --danger:   #e53e3e;
+      --border:   rgba(255,255,255,.08);
+      --radius:   10px;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Ubuntu', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Layout ────────────────────────────────────────────────────── */
+    .page-wrapper {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem 4rem;
+    }
+
+    /* ── Back link ─────────────────────────────────────────────────── */
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      color: var(--dim);
+      font-size: .9rem;
+      margin-bottom: 1.8rem;
+      transition: color .2s;
+    }
+    .back-link:hover { color: var(--accent); text-decoration: none; }
+    .back-link svg { flex-shrink: 0; }
+
+    /* ── Header ────────────────────────────────────────────────────── */
+    .page-header { margin-bottom: .5rem; }
+    .page-header h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .page-header p {
+      color: var(--dim);
+      margin-top: .4rem;
+      font-size: .92rem;
+    }
+    .page-header code {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: .15rem .4rem;
+      font-family: 'Courier New', monospace;
+      font-size: .85rem;
+      color: var(--accent);
+    }
+
+    /* ── Brand gradient separator ──────────────────────────────────── */
+    .separator {
+      height: 3px;
+      background: linear-gradient(90deg, var(--primary) 0%, var(--accent) 100%);
+      border: none;
+      border-radius: 2px;
+      margin: 1.6rem 0;
+    }
+
+    /* ── Panel ─────────────────────────────────────────────────────── */
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    /* ── Table ─────────────────────────────────────────────────────── */
+    .table-wrapper { overflow-x: auto; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    thead th {
+      background: rgba(255,255,255,.03);
+      padding: .75rem 1rem;
+      text-align: left;
+      font-size: .8rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--dim);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background .15s;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(255,255,255,.025); }
+
+    tbody td {
+      padding: .8rem 1rem;
+      vertical-align: middle;
+      font-size: .9rem;
+      color: var(--text);
+    }
+
+    .td-title { font-weight: 500; }
+    .td-source {
+      color: var(--dim);
+      font-size: .82rem;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .td-date {
+      color: var(--dim);
+      font-size: .85rem;
+      white-space: nowrap;
+    }
+
+    /* ── Toggle switch ─────────────────────────────────────────────── */
+    .toggle-wrap {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .toggle {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: rgba(255,255,255,.12);
+      border-radius: 22px;
+      cursor: pointer;
+      transition: background .25s;
+    }
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 16px; height: 16px;
+      left: 3px; top: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform .25s;
+    }
+    .toggle input:checked + .toggle-slider { background: var(--accent); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(18px); }
+    .toggle input:disabled + .toggle-slider { opacity: .4; cursor: not-allowed; }
+
+    /* ── Delete button ─────────────────────────────────────────────── */
+    .btn-delete {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+      background: transparent;
+      border: 1px solid rgba(229,62,62,.4);
+      color: var(--danger);
+      border-radius: 6px;
+      padding: .35rem .7rem;
+      font-size: .82rem;
+      font-family: 'Ubuntu', sans-serif;
+      cursor: pointer;
+      transition: background .2s, border-color .2s;
+    }
+    .btn-delete:hover {
+      background: rgba(229,62,62,.12);
+      border-color: var(--danger);
+    }
+    .btn-delete:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ── Empty state ───────────────────────────────────────────────── */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .8rem;
+      padding: 3.5rem 1rem;
+      color: var(--dim);
+      text-align: center;
+    }
+    .empty-state svg { opacity: .35; }
+    .empty-state p { font-size: .95rem; }
+
+    /* ── Error / Loading states ────────────────────────────────────── */
+    .status-bar {
+      padding: 1rem 1.2rem;
+      font-size: .88rem;
+    }
+    .status-bar.error {
+      color: #fc8181;
+      background: rgba(229,62,62,.08);
+      border-bottom: 1px solid rgba(229,62,62,.2);
+    }
+    .status-bar.loading {
+      color: var(--dim);
+    }
+
+    /* ── Spinner ───────────────────────────────────────────────────── */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,.15);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: .4rem;
+    }
+
+    /* ── Footer note ───────────────────────────────────────────────── */
+    .footer-note {
+      margin-top: 1.5rem;
+      font-size: .82rem;
+      color: var(--dim);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-wrapper">
+
+    <!-- Back link -->
+    <a href="/facilitator" class="back-link" aria-label="Retour au tableau de bord">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+           aria-hidden="true">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+      Retour au tableau de bord
+    </a>
+
+    <!-- Page header -->
+    <div class="page-header">
+      <h1>Corpus documentaire</h1>
+      <p>
+        L'ingestion de documents se fait via la CLI&nbsp;:<br />
+        <code>python ingest_corpus.py --dir /chemin/vers/docs/</code>
+      </p>
+    </div>
+
+    <!-- Brand gradient separator -->
+    <hr class="separator" />
+
+    <!-- Main panel -->
+    <div class="panel" id="corpus-panel">
+      <div class="status-bar loading" id="status-bar">
+        <span class="spinner" aria-hidden="true"></span>Chargement du corpus…
+      </div>
+    </div>
+
+    <p class="footer-note">
+      Les modifications (actif / suppression) sont appliquées immédiatement via l'API.
+    </p>
+
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      const API_BASE = '/v1/corpus';
+      const panel    = document.getElementById('corpus-panel');
+      const statusBar = document.getElementById('status-bar');
+
+      /* ── Helpers ────────────────────────────────────────────────── */
+
+      function formatDate(iso) {
+        if (!iso) return '–';
+        try {
+          return new Date(iso).toLocaleString('fr-FR', {
+            day:    '2-digit',
+            month:  '2-digit',
+            year:   'numeric',
+            hour:   '2-digit',
+            minute: '2-digit',
+          });
+        } catch (_) { return iso; }
+      }
+
+      function escapeHtml(str) {
+        return String(str ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      function showError(msg) {
+        statusBar.className = 'status-bar error';
+        statusBar.innerHTML = `<strong>Erreur&nbsp;:</strong> ${escapeHtml(msg)}`;
+        statusBar.style.display = '';
+      }
+
+      function hideStatus() {
+        statusBar.style.display = 'none';
+      }
+
+      /* ── Render table ───────────────────────────────────────────── */
+
+      function renderTable(docs) {
+        hideStatus();
+
+        // Remove previous table/empty state if any
+        const existing = panel.querySelector('.table-wrapper, .empty-state');
+        if (existing) existing.remove();
+
+        if (!docs || docs.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'empty-state';
+          empty.innerHTML = `
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+                 aria-hidden="true">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="9" y1="13" x2="15" y2="13"/>
+            </svg>
+            <p>Aucun document ingéré.</p>`;
+          panel.appendChild(empty);
+          return;
+        }
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'table-wrapper';
+
+        const table = document.createElement('table');
+        table.setAttribute('aria-label', 'Liste des documents du corpus');
+
+        table.innerHTML = `
+          <thead>
+            <tr>
+              <th scope="col">Titre</th>
+              <th scope="col">Source</th>
+              <th scope="col">Ingéré le</th>
+              <th scope="col" style="text-align:center">Actif</th>
+              <th scope="col"></th>
+            </tr>
+          </thead>
+          <tbody id="corpus-tbody"></tbody>`;
+
+        wrapper.appendChild(table);
+        panel.appendChild(wrapper);
+
+        const tbody = document.getElementById('corpus-tbody');
+
+        docs.forEach(function (doc) {
+          const tr = document.createElement('tr');
+          tr.dataset.id = doc.id;
+
+          const checked = doc.active ? 'checked' : '';
+          const dateStr = formatDate(doc.ingested_at || doc.created_at);
+          const titleStr = escapeHtml(doc.title || doc.filename || doc.id);
+          const sourceStr = escapeHtml(doc.source || doc.filename || '–');
+
+          tr.innerHTML = `
+            <td class="td-title">${titleStr}</td>
+            <td class="td-source" title="${sourceStr}">${sourceStr}</td>
+            <td class="td-date">${dateStr}</td>
+            <td style="text-align:center">
+              <div class="toggle-wrap" style="justify-content:center">
+                <label class="toggle" aria-label="Activer / désactiver ${titleStr}">
+                  <input type="checkbox" ${checked} />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+            </td>
+            <td>
+              <button class="btn-delete" aria-label="Supprimer ${titleStr}" type="button">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                     aria-hidden="true">
+                  <polyline points="3 6 5 6 21 6"/>
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                  <path d="M10 11v6M14 11v6"/>
+                  <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+                </svg>
+                Supprimer
+              </button>
+            </td>`;
+
+          // Toggle handler
+          const checkbox = tr.querySelector('input[type="checkbox"]');
+          checkbox.addEventListener('change', function () {
+            handleToggle(doc.id, checkbox.checked, checkbox);
+          });
+
+          // Delete handler
+          const btnDel = tr.querySelector('.btn-delete');
+          btnDel.addEventListener('click', function () {
+            handleDelete(doc.id, titleStr, tr, btnDel);
+          });
+
+          tbody.appendChild(tr);
+        });
+      }
+
+      /* ── API calls ──────────────────────────────────────────────── */
+
+      function loadCorpus() {
+        statusBar.className = 'status-bar loading';
+        statusBar.innerHTML = '<span class="spinner" aria-hidden="true"></span>Chargement du corpus…';
+        statusBar.style.display = '';
+
+        fetch(API_BASE)
+          .then(function (res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status + ' ' + res.statusText);
+            return res.json();
+          })
+          .then(function (data) {
+            // Accept array at root or { documents: [...] } / { data: [...] }
+            var docs = Array.isArray(data) ? data
+                       : (data.documents || data.data || []);
+            renderTable(docs);
+          })
+          .catch(function (err) {
+            showError(err.message || 'Impossible de contacter l\'API.');
+          });
+      }
+
+      function handleToggle(id, active, checkbox) {
+        checkbox.disabled = true;
+
+        fetch(API_BASE + '/' + encodeURIComponent(id), {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ active: active }),
+        })
+          .then(function (res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            checkbox.disabled = false;
+          })
+          .catch(function (err) {
+            // Revert optimistic UI
+            checkbox.checked = !active;
+            checkbox.disabled = false;
+            alert('Erreur lors de la mise à jour : ' + err.message);
+          });
+      }
+
+      function handleDelete(id, titleStr, tr, btn) {
+        var confirmed = window.confirm(
+          'Supprimer le document « ' + titleStr.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"') + ' » ?\nCette action est irréversible.'
+        );
+        if (!confirmed) return;
+
+        btn.disabled = true;
+
+        fetch(API_BASE + '/' + encodeURIComponent(id), { method: 'DELETE' })
+          .then(function (res) {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            // Reload to reflect server state
+            loadCorpus();
+          })
+          .catch(function (err) {
+            btn.disabled = false;
+            alert('Erreur lors de la suppression : ' + err.message);
+          });
+      }
+
+      /* ── Boot ───────────────────────────────────────────────────── */
+      loadCorpus();
+    })();
+  </script>
+</body>
+</html>
