@@ -73,6 +73,14 @@ _llm_chain: list[dict] = _default_chain()
 _llm_chain_lock = threading.Lock()
 _last_serving_provider: str = ""
 
+
+def _hugin_headers() -> dict:
+    h = {"Content-Type": "application/json"}
+    if HUGIN_CF_ID and HUGIN_CF_SECRET:
+        h["CF-Access-Client-Id"] = HUGIN_CF_ID
+        h["CF-Access-Client-Secret"] = HUGIN_CF_SECRET
+    return h
+
 # Back-compat alias: some code paths (replay.py) still import _active_llm /
 # _active_llm_lock. Expose them as views onto the head of the chain.
 _active_llm_lock = _llm_chain_lock
@@ -773,7 +781,7 @@ Rules:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{HUGIN_BASE_URL}/api/chat",
-                    headers={"Content-Type": "application/json"},
+                    headers=_hugin_headers(),
                     json=ollama_body,
                     timeout=aiohttp.ClientTimeout(total=180),
                     ssl=False,
@@ -999,7 +1007,7 @@ Rules:
                 async with aiohttp.ClientSession() as session:
                     async with session.post(
                         f"{HUGIN_BASE_URL}/api/chat",
-                        headers={"Content-Type": "application/json"},
+                        headers=_hugin_headers(),
                         json=ollama_body,
                         timeout=aiohttp.ClientTimeout(total=CHUNK_TIMEOUT),
                         ssl=False,
@@ -1226,7 +1234,7 @@ Rules:
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{HUGIN_BASE_URL}/api/chat",
-                headers={"Content-Type": "application/json"},
+                headers=_hugin_headers(),
                 json=ollama_body,
                 timeout=aiohttp.ClientTimeout(total=300),
                 ssl=False,
@@ -1593,7 +1601,7 @@ async def _call_hugin(body: dict) -> tuple[int, dict]:
     async with aiohttp.ClientSession() as session:
         async with session.post(
             f"{HUGIN_BASE_URL}/api/chat",
-            headers={"Content-Type": "application/json"},
+            headers=_hugin_headers(),
             json=ollama_body,
             timeout=aiohttp.ClientTimeout(total=120),
             ssl=False,
