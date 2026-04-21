@@ -4,7 +4,7 @@ Mount via: app.include_router(routes_facilitator.router)
 Configure via: routes_facilitator.configure(...)
 """
 
-import json, re, time, io, os, datetime
+import json, re, time, io, os, datetime, logging
 import aiohttp
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
@@ -101,7 +101,10 @@ async def _run_synthesis() -> dict:
 
 @router.post("/v1/qa")
 async def qa(request: Request):
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
     question = body.get("question", "").strip()
     if not question:
         return JSONResponse({"error": "No question"}, status_code=400)
@@ -178,6 +181,12 @@ async def export_synthesis_pptx(session_id: str):
     template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "template_cap_pptx.pptx")
     prs = Presentation(template_path)
 
+    if len(prs.slide_layouts) <= 35:
+        return JSONResponse(
+            {"error": f"Template has only {len(prs.slide_layouts)} layouts; expected at least 36"},
+            status_code=500
+        )
+
     # Cover slide — layout 21 "Title Subtitle"
     cover = prs.slides.add_slide(prs.slide_layouts[21])
     cover.placeholders[0].text = "Synthèse Workshop ASE"
@@ -185,21 +194,21 @@ async def export_synthesis_pptx(session_id: str):
 
     # One slide per theme — layout 35 "Content 3 Boxes"
     boxes_layout = prs.slide_layouts[35]
+    def fill_box(slide, ph_idx: int, items: list[str], header: str):
+        tf = slide.placeholders[ph_idx].text_frame
+        tf.clear()
+        tf.text = header
+        for item in items:
+            p = tf.add_paragraph()
+            p.text = f"• {item}"
+
     for theme in themes:
         slide = prs.slides.add_slide(boxes_layout)
         slide.placeholders[0].text = theme.get("name", "")
 
-        def fill_box(ph_idx: int, items: list[str], header: str):
-            tf = slide.placeholders[ph_idx].text_frame
-            tf.clear()
-            tf.text = header
-            for item in items:
-                p = tf.add_paragraph()
-                p.text = f"• {item}"
-
-        fill_box(22, theme.get("alignment", []), "✓ Alignement")
-        fill_box(35, theme.get("disagreement", []), "✗ Désaccord")
-        fill_box(36, theme.get("unresolved", []), "? Non tranché")
+        fill_box(slide, 22, theme.get("alignment", []), "✓ Alignement")
+        fill_box(slide, 35, theme.get("disagreement", []), "✗ Désaccord")
+        fill_box(slide, 36, theme.get("unresolved", []), "? Non tranché")
 
     buf = io.BytesIO()
     prs.save(buf)
@@ -222,7 +231,8 @@ async def _call_synthesis_llm(system: str, user: str, chain: list[dict]) -> dict
             match = re.search(r'\{.*\}', raw, re.DOTALL)
             if match:
                 return json.loads(match.group())
-        except Exception:
+        except Exception as e:
+            logging.warning("[synthesis] LLM tier %s/%s failed: %s", tier.get('provider'), tier.get('model'), e)
             continue
     return {"themes": [], "error": "llm_unavailable"}
 
@@ -231,7 +241,8 @@ async def _call_qa_llm(system: str, user: str, chain: list[dict]) -> str:
     for tier in chain:
         try:
             return await _llm_call(tier, system, user)
-        except Exception:
+        except Exception as e:
+            logging.warning("[qa] LLM tier %s/%s failed: %s", tier.get('provider'), tier.get('model'), e)
             continue
     return "LLM indisponible."
 
@@ -252,6 +263,8 @@ async def _llm_call(tier: dict, system: str, user: str) -> str:
                 "messages": [{"role": "user", "content": user}]}
         async with aiohttp.ClientSession() as s:
             async with s.post(url, headers=headers, json=body, timeout=timeout) as r:
+                if r.status != 200:
+                    raise RuntimeError(f"Anthropic API error {r.status}: {await r.text()}")
                 data = await r.json()
                 return data["content"][0]["text"]
 
@@ -272,5 +285,7 @@ async def _llm_call(tier: dict, system: str, user: str) -> str:
     }
     async with aiohttp.ClientSession() as s:
         async with s.post(url, headers=headers, json=body, timeout=timeout) as r:
+            if r.status != 200:
+                raise RuntimeError(f"{provider} API error {r.status}: {await r.text()}")
             data = await r.json()
             return data["choices"][0]["message"]["content"]
