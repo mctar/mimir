@@ -187,6 +187,11 @@ async def export_synthesis_pptx(session_id: str):
             status_code=500
         )
 
+    # Remove all template slides, keeping only the layouts/theme
+    sldIdLst = prs.slides._sldIdLst
+    for sldId in list(sldIdLst):
+        sldIdLst.remove(sldId)
+
     # Cover slide — layout 21 "Title Subtitle"
     cover = prs.slides.add_slide(prs.slide_layouts[21])
     cover.placeholders[0].text = "Synthèse Workshop ASE"

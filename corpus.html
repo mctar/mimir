@@ -381,7 +381,8 @@
 
           const checked = doc.active ? 'checked' : '';
           const dateStr = formatDate(doc.ingested_at || doc.created_at);
-          const titleStr = escapeHtml(doc.title || doc.filename || doc.id);
+          const titleRaw = doc.title || doc.filename || String(doc.id);
+          const titleStr = escapeHtml(titleRaw);
           const sourceStr = escapeHtml(doc.source || doc.filename || '–');
 
           tr.innerHTML = `
@@ -419,7 +420,7 @@
           // Delete handler
           const btnDel = tr.querySelector('.btn-delete');
           btnDel.addEventListener('click', function () {
-            handleDelete(doc.id, titleStr, tr, btnDel);
+            handleDelete(doc.id, titleRaw, tr, btnDel);
           });
 
           tbody.appendChild(tr);
@@ -469,9 +470,9 @@
           });
       }
 
-      function handleDelete(id, titleStr, tr, btn) {
+      function handleDelete(id, titleRaw, tr, btn) {
         var confirmed = window.confirm(
-          'Supprimer le document « ' + titleStr.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"') + ' » ?\nCette action est irréversible.'
+          'Supprimer le document « ' + titleRaw + ' » ?\nCette action est irréversible.'
         );
         if (!confirmed) return;
 
