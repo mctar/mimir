@@ -32,5 +32,8 @@ specs/
 # Brand assets (confidential)
 assets/template_cap_pptx.pptx
 
+# Internal tooling docs
+docs/superpowers/
+
 # Claude Code
 .claude/
