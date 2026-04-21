@@ -1,5 +1,6 @@
-#!/usr/bin/env python3"""
-Local faster-whisper HTTP server — compatible with stt_worker.py
+#!/usr/bin/env python3
+"""
+Local faster-whisper HTTP server -- compatible with stt_worker.py
 Exposes POST /v1/transcribe on port 8766.
 
 Request:  raw PCM float32 bytes, query params: sample_rate, language, initial_prompt
