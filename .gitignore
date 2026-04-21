@@ -29,5 +29,8 @@ specs/
 *-spec.md
 *-spec-*.md
 
+# Brand assets (confidential)
+assets/template_cap_pptx.pptx
+
 # Claude Code
 .claude/
