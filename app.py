@@ -29,6 +29,9 @@ if os.path.exists(_env_path):
                 os.environ.setdefault(_k.strip(), _v.strip())
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+ANTHROPIC_AUTH_TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+ANTHROPIC_SONNET_MODEL = os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-20250514")
 
 # ─── Hugin (self-hosted Ollama) ───
 HUGIN_BASE_URL = os.environ.get("HUGIN_BASE_URL", "https://munin.btrbot.com")
@@ -57,8 +60,8 @@ def _default_chain() -> list[dict]:
         chain.append({"provider": "hugin",     "model": "gemma4:26b"})
     if GEMINI_API_KEY:
         chain.append({"provider": "gemini",    "model": "gemini-2.5-flash"})
-    if ANTHROPIC_API_KEY:
-        chain.append({"provider": "anthropic", "model": "claude-sonnet-4-20250514"})
+    if ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN:
+        chain.append({"provider": "anthropic", "model": ANTHROPIC_SONNET_MODEL})
     if not chain:
         # No credentials at all — keep Hugin as a placeholder so the server
         # still boots; calls will fail closed with a clear error.
@@ -281,8 +284,8 @@ def _next_seq() -> int:
 async def lifespan(app: FastAPI):
     await db.init_db()
     # Default STT backend
-    configure_stt("remote")
-    print(f"  STT: faster-whisper (localhost:8766)")
+    configure_stt("remote", remote_url=STT_SERVER_URL)
+    print(f"  STT: faster-whisper ({STT_SERVER_URL})")
     asyncio.create_task(broadcast_loop())
     asyncio.create_task(snapshot_loop())
     print(f"  Server ready — audio arrives from browser via WebSocket")
@@ -1292,7 +1295,7 @@ async def list_llm_providers():
                 {"id": "claude-sonnet-4-20250514", "label": "Claude Sonnet 4", "note": "Default"},
                 {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5", "note": "Fast"},
             ],
-            "available": bool(ANTHROPIC_API_KEY),
+            "available": bool(ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN),
         },
     }
     if HUGIN_BASE_URL:
@@ -1363,7 +1366,7 @@ def _validate_tier(tier: dict) -> str | None:
         return "HUGIN_BASE_URL not configured"
     if provider == "gemini" and not GEMINI_API_KEY:
         return "Gemini API key not configured"
-    if provider == "anthropic" and not ANTHROPIC_API_KEY:
+    if provider == "anthropic" and not (ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN):
         return "Anthropic API key not configured"
     return None
 
@@ -1403,7 +1406,6 @@ async def set_active_llm(request: Request):
             _llm_chain.clear()
             _llm_chain.extend(new_chain)
 
-        print(f"  LLM chain: {[f'{t['provider']}/{t['model']}' for t in old]} → {[f'{t['provider']}/{t['model']}' for t in new_chain]}")
         _publish_llm_state()
         return JSONResponse({"chain": new_chain, "tiers": _cb_snapshot()})
 
@@ -1541,20 +1543,21 @@ def _extract_usage(data: dict, provider: str) -> dict:
 # ─── LLM proxy ───
 async def _call_anthropic(body: dict) -> tuple[int, dict]:
     """POST to Anthropic Messages API. Returns (status, response_dict).
-    Bounded timeout so a dead Anthropic endpoint can't stall the chain."""
-    if not ANTHROPIC_API_KEY:
+    Supports both direct Anthropic API (x-api-key) and Azure AI Foundry
+    (ANTHROPIC_AUTH_TOKEN via Authorization: Bearer).
+    Bounded timeout so a dead endpoint can't stall the chain."""
+    auth_token = ANTHROPIC_AUTH_TOKEN or ANTHROPIC_API_KEY
+    if not auth_token:
         return 503, {"error": {"message": "Anthropic: no API key configured"}}
+    url = ANTHROPIC_BASE_URL.rstrip("/") + "/v1/messages"
+    headers = {"Content-Type": "application/json", "anthropic-version": "2023-06-01"}
+    if ANTHROPIC_AUTH_TOKEN:
+        headers["Authorization"] = f"Bearer {ANTHROPIC_AUTH_TOKEN}"
+    else:
+        headers["x-api-key"] = ANTHROPIC_API_KEY
     timeout = aiohttp.ClientTimeout(total=60, connect=5)
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-            },
-            json=body,
-        ) as resp:
+        async with session.post(url, headers=headers, json=body, ssl=False) as resp:
             data = await resp.json()
             return resp.status, data
 
