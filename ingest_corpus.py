@@ -10,6 +10,7 @@ Idempotent: skips already-ingested content (SHA-256 hash check).
 import argparse, asyncio, sys
 from pathlib import Path
 
+import numpy as np
 import aiosqlite
 import corpus
 
@@ -50,6 +51,8 @@ def extract_text(path: Path) -> str:
 
 def chunk_text(text: str, chunk_size: int, overlap: int) -> list[str]:
     """Split text into overlapping chunks."""
+    if overlap >= chunk_size:
+        raise ValueError(f"overlap ({overlap}) must be less than chunk_size ({chunk_size})")
     chunks = []
     start = 0
     while start < len(text):
@@ -72,14 +75,17 @@ async def ingest_file(db: aiosqlite.Connection, path: Path, chunk_size: int, ove
     for i, chunk in enumerate(chunks):
         emb = await corpus.embed_text(chunk)
         if emb is None:
-            import numpy as np
             emb = np.zeros(corpus.EMBED_DIM, dtype=np.float32)
         title = f"{path.stem} [{i+1}/{len(chunks)}]"
         try:
             await corpus.store_doc(db, title, path.name, chunk, emb)
             stored += 1
-        except Exception:
-            skipped += 1  # duplicate
+        except Exception as e:
+            if "UNIQUE constraint" in str(e):
+                skipped += 1
+            else:
+                print(f"\n  DB ERROR on chunk {i+1}: {e}")
+                skipped += 1
     print(f" {stored} chunks stored, {skipped} skipped (duplicates)")
 
 
