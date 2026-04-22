@@ -290,22 +290,25 @@ def _next_seq() -> int:
 
 # ─── Q&A LLM helpers ─────────────────────────────────────────────────────────
 
-async def _qa_llm_call_chain(system: str, user: str, chain: list[dict]) -> str:
+async def _qa_llm_call_chain(system: str, user: str, chain: list[dict],
+                             max_tokens: int = 2048, timeout_secs: int = 60) -> str:
     """Walk the chain and return the first successful text response."""
     for tier in chain:
         try:
-            return await _qa_llm_call(tier, system, user)
+            return await _qa_llm_call(tier, system, user,
+                                      max_tokens=max_tokens, timeout_secs=timeout_secs)
         except Exception as e:
             logger.warning(f"[qa] LLM tier {tier.get('provider')}/{tier.get('model')} failed: {e}")
             continue
     return "LLM indisponible."
 
 
-async def _qa_llm_call(tier: dict, system: str, user: str) -> str:
+async def _qa_llm_call(tier: dict, system: str, user: str,
+                       max_tokens: int = 2048, timeout_secs: int = 60) -> str:
     """Single-tier LLM call for simple chat completions (no graph parsing)."""
     provider = tier["provider"]
     model = tier["model"]
-    timeout = aiohttp.ClientTimeout(total=60)
+    timeout = aiohttp.ClientTimeout(total=timeout_secs)
 
     if provider == "anthropic":
         url = f"{ANTHROPIC_BASE_URL}/v1/messages"
@@ -314,7 +317,7 @@ async def _qa_llm_call(tier: dict, system: str, user: str) -> str:
             headers["Authorization"] = f"Bearer {ANTHROPIC_AUTH_TOKEN}"
         else:
             headers["x-api-key"] = ANTHROPIC_API_KEY
-        body = {"model": model, "max_tokens": 2048, "system": system,
+        body = {"model": model, "max_tokens": max_tokens, "system": system,
                 "messages": [{"role": "user", "content": user}]}
         async with aiohttp.ClientSession() as s:
             async with s.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
@@ -331,7 +334,7 @@ async def _qa_llm_call(tier: dict, system: str, user: str) -> str:
         headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
 
     body = {
-        "model": model, "max_tokens": 2048,
+        "model": model, "max_tokens": max_tokens,
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
     }
     async with aiohttp.ClientSession() as s:
@@ -889,49 +892,18 @@ Rules:
 
     user_prompt = f"SESSION TRANSCRIPT:\n\n{transcript_for_recap}{graph_context}\n\nGenerate the recap."
 
-    model = "gemma4:31b"
-    ollama_body = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "stream": False,
-        "think": False,
-        "format": "json",
-        "options": {
-            "temperature": 0,
-            "num_predict": 4096,
-        },
-    }
-
-    # Retry once on parse failure with stricter reminder
+    # Walk the LLM chain (hugin → gemini → anthropic) with JSON-parse retry
     max_attempts = 2
-    last_error = None
-
+    raw_text = ""
     for attempt in range(max_attempts):
+        prompt = user_prompt
+        if attempt > 0:
+            prompt += "\n\nIMPORTANT: Return ONLY the raw JSON object. No markdown, no explanation, no code fences."
         try:
-            if attempt > 0:
-                # Add stricter reminder on retry
-                ollama_body["messages"] = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt + "\n\nIMPORTANT: Return ONLY the raw JSON object. No markdown, no explanation, no code fences."},
-                ]
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{HUGIN_BASE_URL}/api/chat",
-                    headers=_hugin_headers(),
-                    json=ollama_body,
-                    timeout=aiohttp.ClientTimeout(total=180),
-                    ssl=False,
-                ) as resp:
-                    data = await resp.json()
-                    if resp.status != 200:
-                        err = data.get("error", "") or str(data)
-                        return JSONResponse({"error": f"Ollama: {err}"}, status_code=502)
-
-            raw_text = data.get("message", {}).get("content", "")
+            raw_text = await _qa_llm_call_chain(
+                system_prompt, prompt, _llm_chain,
+                max_tokens=4096, timeout_secs=180,
+            )
             # Strip markdown code fences if present
             cleaned = raw_text.strip()
             if cleaned.startswith("```"):
@@ -939,33 +911,31 @@ Rules:
             if cleaned.endswith("```"):
                 cleaned = cleaned[:-3]
             recap = json.loads(cleaned.strip())
-
-            # Add metadata
             recap["language"] = session_lang
             recap["schema_version"] = 2
             recap["transcript_stats"] = stats
-
-            await db.store_recap(session_id, recap, model)
-            log_activity("recap", session_id, "completed", f"{len(segments)} segments, model={model}")
-            return JSONResponse({"recap": recap, "model": model, "created_at": time.time()})
-
+            served_model = _llm_chain[0]["model"] if _llm_chain else "unknown"
+            await db.store_recap(session_id, recap, served_model)
+            log_activity("recap", session_id, "completed",
+                         f"{len(segments)} segments, model={served_model}")
+            return JSONResponse({"recap": recap, "model": served_model, "created_at": time.time()})
         except json.JSONDecodeError as e:
-            last_error = e
-            logger.error(f"Recap parse attempt {attempt + 1} failed: {e}")
+            logger.error(f"Recap JSON parse attempt {attempt + 1} failed: {e}")
             if attempt < max_attempts - 1:
                 continue
-            # Final failure — store error state
             error_recap = {
                 "schema_version": 2,
                 "language": session_lang,
-                "error": f"Failed to parse LLM response after {max_attempts} attempts: {str(last_error)}",
+                "error": f"Failed to parse LLM response after {max_attempts} attempts: {e}",
                 "raw_response": raw_text[:2000],
                 "transcript_stats": stats,
             }
-            await db.store_recap(session_id, error_recap, model)
-            log_activity("recap", session_id, "error", str(last_error))
-            return JSONResponse({"error": f"Failed to parse LLM response: {last_error}"}, status_code=502)
+            await db.store_recap(session_id, error_recap, "unknown")
+            log_activity("recap", session_id, "error", str(e))
+            return JSONResponse({"error": f"Failed to parse LLM response: {e}"}, status_code=502)
         except Exception as e:
+            logger.error(f"Recap generation failed for session {session_id}: "
+                         f"{type(e).__name__}: {e}")
             log_activity("recap", session_id, "error", str(e))
             return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
 
