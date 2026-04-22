@@ -1025,7 +1025,7 @@ Rules:
             prompt += "\n\nIMPORTANT: Return ONLY the raw JSON object. No markdown, no explanation, no code fences."
         try:
             raw_text = await _qa_llm_call_chain(
-                system_prompt, prompt, _llm_chain,
+                system_prompt, [{"role": "user", "content": prompt}], _llm_chain,
                 max_tokens=4096, timeout_secs=180,
             )
             # Strip markdown code fences if present
