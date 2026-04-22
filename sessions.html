@@ -1420,6 +1420,95 @@ async function sendQaQuestion() {
   }
 }
 
+// ─── Recap inline editing ───
+let _editingField = null;
+let _editConns = [];   // copy of non_obvious_connections while editing that field
+
+function editBtn(field) {
+  return `<button class="recap-edit-btn" onclick="startEdit('${field}')" title="Edit this section">✎</button>`;
+}
+
+function editActions() {
+  return `<div class="recap-edit-actions">
+    <button class="btn btn-primary btn-sm" onclick="saveEdit()">Save</button>
+    <button class="btn btn-ghost btn-sm" onclick="cancelEdit()">Cancel</button>
+    <span id="edit-error" class="recap-edit-error"></span>
+  </div>`;
+}
+
+function startEdit(field) {
+  _editingField = field;
+  if (field === 'non_obvious_connections' && current && current.recap) {
+    _editConns = JSON.parse(JSON.stringify(current.recap.recap.non_obvious_connections || []));
+  }
+  renderRecap();
+}
+
+function cancelEdit() {
+  _editingField = null;
+  renderRecap();
+}
+
+function deleteEditConn(idx) {
+  _editConns.splice(idx, 1);
+  renderRecap();
+}
+
+function addEditItem(listId, tag) {
+  const list = document.getElementById(listId);
+  const el = document.createElement(tag);
+  el.innerHTML = `<input type="text" class="recap-edit-input" value=""> <button class="recap-edit-del" onclick="this.closest('${tag}').remove()">×</button>`;
+  list.appendChild(el);
+  el.querySelector('input').focus();
+}
+
+async function saveEdit() {
+  if (!_editingField || !current) return;
+  const r = Object.assign({}, current.recap.recap);
+  const field = _editingField;
+
+  if (field === 'elevator_pitch') {
+    r.elevator_pitch = document.getElementById('edit-elevator_pitch').value.trim();
+  } else if (field === 'retain') {
+    r.retain = Array.from(document.querySelectorAll('#edit-retain input'))
+      .map(i => i.value.trim()).filter(v => v);
+  } else if (field === 'non_obvious_connections') {
+    r.non_obvious_connections = _editConns;
+  } else if (field === 'contradictions') {
+    r.contradictions = Array.from(document.querySelectorAll('#edit-contradictions input'))
+      .map(i => i.value.trim()).filter(v => v);
+  } else if (field === 'summary') {
+    r.summary = document.getElementById('edit-summary').value.trim();
+  } else if (field === 'decisions') {
+    r.decisions = Array.from(document.querySelectorAll('#edit-decisions input'))
+      .map(i => i.value.trim()).filter(v => v);
+  } else if (field === 'open_threads') {
+    r.open_threads = Array.from(document.querySelectorAll('#edit-open_threads input'))
+      .map(i => i.value.trim()).filter(v => v);
+  }
+
+  const errEl = document.getElementById('edit-error');
+  const saveBtns = document.querySelectorAll('.recap-edit-actions .btn-primary');
+  saveBtns.forEach(b => { b.disabled = true; b.textContent = 'Saving…'; });
+
+  try {
+    const resp = await fetch(`/v1/sessions/${current.session.id}/recap`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({recap: r}),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Save failed');
+    current.recap = data;
+    _editingField = null;
+    renderRecap();
+    toast('Recap saved');
+  } catch (e) {
+    if (errEl) errEl.textContent = e.message;
+    saveBtns.forEach(b => { b.disabled = false; b.textContent = 'Save'; });
+  }
+}
+
 // ─── Recap ───
 function renderRecap() {
   const container = document.getElementById('recap-content');
