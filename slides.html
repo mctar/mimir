@@ -71,9 +71,10 @@
     margin-top: 32px; padding: 18px 24px;
     border-left: 3px solid var(--accent);
     font-size: clamp(14px, 1.6vw, 18px); font-style: italic; color: #a0aec0;
-    opacity: 0; animation: bullet-in 0.5s ease forwards;
+    opacity: 0;
     max-width: 80%;
   }
+  .slide-quote.show { animation: bullet-in 0.5s ease forwards; }
   .slide[data-section="Value Proposition"] .slide-quote { border-left-color: var(--section-val); }
   .slide[data-section="Day 2 & Day 3"] .slide-quote { border-left-color: var(--section-d2); }
 
@@ -248,8 +249,12 @@ function applySlideUpdate(slides) {
     // Quote
     if (quote) {
       quoteEl.textContent = '\u201C' + quote + '\u201D';
+      quoteEl.classList.remove('show');
+      void quoteEl.offsetWidth; // force reflow to restart animation
       quoteEl.style.display = '';
+      quoteEl.classList.add('show');
     } else {
+      quoteEl.classList.remove('show');
       quoteEl.style.display = 'none';
     }
 
@@ -261,14 +266,14 @@ function applySlideUpdate(slides) {
     }
 
     // Track most recently updated for auto-advance
+    const slideIdx = SLIDES.findIndex(s => s.id === sid);
     if (updAt && updAt > latestTs) {
       latestTs = updAt;
-      latestIdx = SLIDES.findIndex(s => s.id === sid);
+      latestIdx = slideIdx;
     }
 
     // Update dot fill state
-    const dotIdx = SLIDES.findIndex(s => s.id === sid);
-    const dotEl = document.getElementById('dot-' + dotIdx);
+    const dotEl = document.getElementById('dot-' + slideIdx);
     if (dotEl && bullets.length > 0) dotEl.classList.add('filled');
   }
 
