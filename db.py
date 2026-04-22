@@ -56,6 +56,16 @@ async def init_db(path: str = DB_PATH):
             created_at REAL NOT NULL,
             UNIQUE(session_id)
         );
+        CREATE TABLE IF NOT EXISTS corpus_docs (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            title        TEXT NOT NULL,
+            source       TEXT,
+            content      TEXT NOT NULL,
+            content_hash TEXT NOT NULL UNIQUE,
+            embedding    BLOB NOT NULL,
+            created_at   REAL NOT NULL,
+            active       INTEGER NOT NULL DEFAULT 1
+        );
     """)
     await _db.commit()
 

@@ -17,6 +17,7 @@ import db
 import stt_worker
 from stt_worker import configure_stt, get_stt_config
 from reconciler import GraphReconciler
+import routes_facilitator
 
 # ─── Load .env ───
 _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -294,8 +295,25 @@ async def lifespan(app: FastAPI):
     # Default STT backend
     configure_stt("remote", remote_url=STT_SERVER_URL)
     print(f"  STT: faster-whisper ({STT_SERVER_URL})")
+
+    async def _ws_broadcast(message: str):
+        """Broadcast a text message to all connected WebSocket clients."""
+        for ws in list(connected_clients):
+            try:
+                await ws.send_text(message)
+            except Exception:
+                pass
+
+    routes_facilitator.configure(
+        get_session_id=lambda: _current_session_id,
+        broadcast=_ws_broadcast,
+        get_llm_chain=lambda: list(_llm_chain),
+        get_db_conn=lambda: db._db,
+    )
+
     asyncio.create_task(broadcast_loop())
     asyncio.create_task(snapshot_loop())
+    asyncio.create_task(_synthesis_loop())
     print(f"  Server ready — audio arrives from browser via WebSocket")
     print(f"  Main:     http://0.0.0.0:{WS_PORT}/")
     print(f"  Monitor:  http://0.0.0.0:{WS_PORT}/monitor")
@@ -305,6 +323,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.include_router(routes_facilitator.router)
 WS_PORT = 8765
 
 
@@ -2136,6 +2155,17 @@ async def broadcast_loop():
         except queue.Empty:
             pass
         await asyncio.sleep(0.05)
+
+
+async def _synthesis_loop():
+    """Auto-generate synthesis every 5 minutes when a session is active."""
+    while True:
+        await asyncio.sleep(300)
+        if _current_session_id:
+            try:
+                await routes_facilitator._run_synthesis()
+            except Exception as e:
+                print(f"[synthesis_loop] error: {e}", flush=True)
 
 
 async def snapshot_loop():
