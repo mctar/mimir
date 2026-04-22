@@ -1100,6 +1100,7 @@ h1 {
       <button class="btn btn-ghost" onclick="exportGraph('slides')">Export Slides</button>
       <button class="btn btn-ghost" onclick="copyMarkdown()">Copy Markdown</button>
       <button class="btn btn-ghost" onclick="downloadMarkdown()">Download .md</button>
+      <span id="recap-edited-badge" class="recap-edited-badge" style="display:none;">✎ EDITED</span>
     </div>
     <div id="recap-content"></div>
     <div id="recap-empty" class="recap-empty" style="display:none;">
@@ -1526,6 +1527,8 @@ function renderRecap() {
 
   empty.style.display = 'none';
   document.getElementById('recap-toolbar').style.display = '';
+  const badge = document.getElementById('recap-edited-badge');
+  if (badge) badge.style.display = (current.recap.model === 'manual') ? '' : 'none';
   const r = current.recap.recap;
 
   // Check for error state
