@@ -1415,6 +1415,16 @@ function escQa(text) {
   return d.innerHTML;
 }
 
+function copyQaBubble(btn) {
+  const row = btn.closest('.qa-actions').previousElementSibling;
+  const bubble = row ? row.querySelector('.qa-bubble--assistant') : null;
+  if (!bubble) return;
+  navigator.clipboard.writeText(bubble.innerText).then(
+    () => toast('Copié'),
+    () => toast('Échec de la copie', true)
+  );
+}
+
 async function sendQaQuestion() {
   if (_qaLoading || !current) return;
   const input = document.getElementById('qa-input');
