@@ -1173,9 +1173,11 @@ async function generateRecap() {
     current.recap = data;
     renderRecap();
     toast('Recap generated');
-    // Update list badge
+    // Update list badge and session object so map re-renders with Export Slides button
     const s = sessions.find(s => s.id === current.session.id);
     if (s) s.has_recap = 1;
+    current.session.has_recap = 1;
+    mapRendered = false;  // force map re-render so Export Slides button appears
   } catch (e) {
     toast(e.message, true);
     renderRecap();  // restore previous state
