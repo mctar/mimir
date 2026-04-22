@@ -12,6 +12,7 @@ import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 import aiohttp
+from log import logger
 
 from log import logger
 import db
@@ -588,9 +589,14 @@ _export_tasks: dict[str, dict] = {}  # session_id -> {task, status, path, error}
 
 @app.post("/v1/sessions/{session_id}/export/{fmt}")
 async def start_export(session_id: str, fmt: str, request: Request):
-    """Start a PDF or video export. Returns immediately; poll status endpoint."""
-    if fmt not in ("pdf", "video"):
-        return JSONResponse({"error": "Format must be 'pdf' or 'video'"}, status_code=400)
+    """Start a PDF, video, or HTML slides export. Returns immediately; poll status endpoint."""
+    if fmt not in ("pdf", "video", "slides"):
+        return JSONResponse({"error": "Format must be 'pdf', 'video', or 'slides'"}, status_code=400)
+
+    if fmt == "slides":
+        recap = await db.get_recap(session_id)
+        if not recap or not recap.get("recap"):
+            return JSONResponse({"error": "No recap found. Generate a recap first."}, status_code=400)
 
     task_key = f"{session_id}_{fmt}"
     if task_key in _export_tasks and _export_tasks[task_key].get("status") == "running":
@@ -603,22 +609,26 @@ async def start_export(session_id: str, fmt: str, request: Request):
         pass
 
     import tempfile
-    ext = "pdf" if fmt == "pdf" else "mp4"
+    ext = {"pdf": "pdf", "video": "mp4", "slides": "html"}[fmt]
     outfile = os.path.join(tempfile.gettempdir(), f"mimir-{session_id}.{ext}")
 
     _export_tasks[task_key] = {"status": "running", "path": outfile, "error": None}
 
     async def run_export():
         try:
-            from export import export_pdf, export_video
+            from export import export_pdf, export_video, export_slides
             if fmt == "pdf":
                 await export_pdf(session_id, outfile)
-            else:
+            elif fmt == "video":
                 await export_video(
                     session_id, outfile,
                     speed=body.get("speed", 2.0),
                     max_hold=body.get("max_hold", 3.0),
                 )
+            else:
+                with _llm_chain_lock:
+                    chain = [dict(t) for t in _llm_chain]
+                await export_slides(session_id, outfile, chain=chain)
             _export_tasks[task_key]["status"] = "done"
         except Exception as e:
             _export_tasks[task_key]["status"] = "error"
@@ -647,8 +657,8 @@ async def download_export(session_id: str, fmt: str):
     if not info or info["status"] != "done":
         return JSONResponse({"error": "Export not ready"}, status_code=404)
 
-    ext = "pdf" if fmt == "pdf" else "mp4"
-    media = "application/pdf" if fmt == "pdf" else "video/mp4"
+    ext = {"pdf": "pdf", "video": "mp4", "slides": "html"}.get(fmt, fmt)
+    media = {"pdf": "application/pdf", "video": "video/mp4", "slides": "text/html"}.get(fmt, "application/octet-stream")
     return FileResponse(
         info["path"],
         media_type=media,

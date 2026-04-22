@@ -872,6 +872,7 @@ h1 {
     <div class="transcript-toolbar" id="recap-toolbar" style="display:none;">
       <button class="btn btn-ghost" onclick="generateRecap()" id="btn-regenerate">Regenerate Recap</button>
       <button class="btn btn-ghost" onclick="exportPdf()">Export PDF</button>
+      <button class="btn btn-ghost" onclick="exportGraph('slides')">Export Slides</button>
       <button class="btn btn-ghost" onclick="copyMarkdown()">Copy Markdown</button>
       <button class="btn btn-ghost" onclick="downloadMarkdown()">Download .md</button>
     </div>
@@ -1196,9 +1197,11 @@ async function generateRecap() {
     current.recap = data;
     renderRecap();
     toast('Recap generated');
-    // Update list badge
+    // Update list badge and session object so map re-renders with Export Slides button
     const s = sessions.find(s => s.id === current.session.id);
     if (s) s.has_recap = 1;
+    current.session.has_recap = 1;
+    mapRendered = false;  // force map re-render so Export Slides button appears
   } catch (e) {
     toast(e.message, true);
     renderRecap();  // restore previous state
@@ -1659,6 +1662,7 @@ function renderMindMap() {
   exportBar.innerHTML = `
     <button class="btn btn-ghost" onclick="exportGraph('pdf')">Export PDF</button>
     <button class="btn btn-ghost" onclick="exportGraph('video')">Export Video</button>
+    ${current && current.session.has_recap ? `<button class="btn btn-ghost" onclick="exportGraph('slides')">Export Slides</button>` : ''}
   `;
   wrap.appendChild(exportBar);
 
@@ -2106,7 +2110,8 @@ async function exportGraph(fmt) {
   const origText = btn.textContent;
 
   btn.classList.add('exporting');
-  btn.textContent = fmt === 'pdf' ? 'Generating PDF...' : 'Rendering video...';
+  const fmtLabels = {pdf: 'Generating PDF...', video: 'Rendering video...', slides: 'Generating slides...'};
+  btn.textContent = fmtLabels[fmt] || `Exporting ${fmt}...`;
   toast(`Starting ${fmt.toUpperCase()} export...`);
 
   try {
@@ -2133,7 +2138,8 @@ async function exportGraph(fmt) {
     if (status === 'done') {
       const a = document.createElement('a');
       a.href = `/v1/sessions/${sid}/export/${fmt}/download`;
-      a.download = `mimir-${sid}.${fmt === 'pdf' ? 'pdf' : 'mp4'}`;
+      const fmtExt = {pdf: 'pdf', video: 'mp4', slides: 'html'};
+      a.download = `mimir-${sid}.${fmtExt[fmt] || fmt}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
