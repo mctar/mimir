@@ -674,6 +674,39 @@ async def session_qa(session_id: str, request: Request):
     return JSONResponse({"answer": answer})
 
 
+# ─── Corpus admin ─────────────────────────────────────────────────────────────
+
+@app.get("/corpus-admin", response_class=FileResponse)
+async def corpus_admin_view():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "corpus.html"))
+
+
+@app.get("/v1/corpus")
+async def list_corpus():
+    if db._db is None:
+        return JSONResponse({"docs": []})
+    docs = await corpus_module.list_docs(db._db)
+    return JSONResponse({"docs": docs})
+
+
+@app.patch("/v1/corpus/{doc_id}")
+async def toggle_corpus_doc(doc_id: int, request: Request):
+    body = await request.json()
+    active = bool(body.get("active", True))
+    if db._db is None:
+        return JSONResponse({"error": "no db"}, status_code=500)
+    await corpus_module.set_doc_active(db._db, doc_id, active)
+    return JSONResponse({"ok": True})
+
+
+@app.delete("/v1/corpus/{doc_id}")
+async def delete_corpus_doc(doc_id: int):
+    if db._db is None:
+        return JSONResponse({"error": "no db"}, status_code=500)
+    await corpus_module.delete_doc(db._db, doc_id)
+    return JSONResponse({"ok": True})
+
+
 _export_tasks: dict[str, dict] = {}  # session_id -> {task, status, path, error}
 
 @app.post("/v1/sessions/{session_id}/export/{fmt}")
