@@ -6,6 +6,7 @@ decay, budget enforcement, and user actions.
 
 import math, time
 from dataclasses import dataclass, field
+from log import logger
 
 
 @dataclass
@@ -96,6 +97,7 @@ class GraphReconciler:
                 if age > self.DECAY_SECONDS:
                     ns.state = "parked"
                     removed += 1
+                    logger.debug(f"Reconciler: decay '{ns.label}' → parked (age {age:.0f}s)")
 
         # 4. Update edges, filter to existing active/parked nodes
         active_ids = {nid for nid, ns in self.nodes.items() if ns.state in ("active", "parked")}
@@ -139,6 +141,7 @@ class GraphReconciler:
                 if ns.state == "active" and not ns.pinned:
                     ns.state = "parked"
                     removed += 1
+                    logger.debug(f"Reconciler: budget evict '{ns.label}' (importance {ns.importance:.3f})")
                     break
             else:
                 break  # all remaining are pinned
