@@ -1020,6 +1020,26 @@ h1 {
   border-top: 1px solid var(--bdr);
   margin: 0.6em 0;
 }
+.qa-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 0 6px 30px;
+  margin-top: -4px;
+}
+.qa-copy-btn {
+  background: none;
+  border: 1px solid var(--bdr);
+  border-radius: 4px;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 7px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.qa-copy-btn:hover {
+  color: var(--txt);
+  border-color: var(--txt);
+}
 .qa-input-bar {
   display: flex;
   gap: 8px;
