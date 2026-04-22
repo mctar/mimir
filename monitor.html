@@ -7,34 +7,49 @@
 <link rel="icon" type="image/svg+xml" href="/mimir-favicon.svg">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=IBM+Plex+Mono:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Ubuntu+Mono:wght@400;500&display=swap');
 
 *{margin:0;padding:0;box-sizing:border-box}
 
 :root {
-  --bg: #080814;
-  --panel: #0c0d18;
+  --bg: #080c18;
+  --panel: #0d1124;
   --card: rgba(255,255,255,0.04);
   --bdr: rgba(255,255,255,0.08);
-  --txt: #d4d6e0;
-  --dim: #7a7d94;
-  --bright: #f2f2f6;
-  --green: #34d399;
-  --purple: #a78bfa;
-  --rose: #fb7185;
-  --amber: #fbbf24;
-  --blue: #60a5fa;
-  --cyan: #22d3ee;
-  --teal: #2dd4bf;
-  --orange: #fb923c;
-  --pink: #f0abfc;
-  --lime: #a3e635;
+  --txt: #c8ccd8;
+  --dim: #5a6a80;
+  --bright: #f0f4f8;
+  /* Capgemini Brand */
+  --color-brand-blue: #0058AB;
+  --color-brand-dark: #121A38;
+  --color-brand-light: #1DB8F2;
+  --color-white: #FFFFFF;
+  --color-acc-turquoise: #00D5D0;
+  --color-acc-yellow: #FEB100;
+  --color-acc-orange: #FF816E;
+  --color-acc-lilac: #D4D3F1;
+  --color-acc-teal: #00828E;
+  --color-acc-terracotta: #BE4D00;
+  --color-acc-red: #8F3237;
+  --color-acc-purple: #71609E;
+  --capgemini-gradient: linear-gradient(90deg, #121A38 0%, #0058AB 30%, #1DB8F2 70%, #00D5D0 100%);
+  /* Semantic aliases */
+  --green: #1DB8F2;
+  --purple: #71609E;
+  --rose: #FF816E;
+  --amber: #FEB100;
+  --blue: #0058AB;
+  --cyan: #00D5D0;
+  --teal: #00828E;
+  --orange: #FF816E;
+  --pink: #D4D3F1;
+  --lime: #00D5D0;
 }
 
 body {
   background: var(--bg);
   color: var(--txt);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Ubuntu', Verdana, sans-serif;
   font-size: 14px;
   height: 100vh;
   overflow: hidden;
@@ -48,12 +63,20 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 12px 20px;
-  border-bottom: 1px solid var(--bdr);
+  border-bottom: none;
   background: var(--panel);
   flex-shrink: 0;
+  position: relative;
+}
+#header::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--capgemini-gradient);
 }
 #header .brand {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 3px;
@@ -64,7 +87,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 12px;
   color: var(--dim);
 }
@@ -78,30 +101,30 @@ body {
 #hdr-end-session {
   display: none;
   padding: 5px 12px;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 9px;
   font-weight: 500;
   letter-spacing: 1px;
   text-transform: uppercase;
   background: transparent;
-  border: 1px solid rgba(251,113,133,0.3);
+  border: 1px solid rgba(255,129,110,0.3);
   border-radius: 4px;
   color: var(--rose);
   cursor: pointer;
   transition: all .2s;
 }
 #hdr-end-session:hover {
-  background: rgba(251,113,133,0.1);
+  background: rgba(255,129,110,0.1);
   border-color: var(--rose);
 }
 
 /* ========== DISCONNECT BANNER ========== */
 #disconnect-banner {
   display: none;
-  background: rgba(251,113,133,0.15);
-  border-bottom: 1px solid rgba(251,113,133,0.3);
+  background: rgba(255,129,110,0.15);
+  border-bottom: 1px solid rgba(255,129,110,0.3);
   padding: 8px 20px;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 11px;
   font-weight: 500;
   color: var(--rose);
@@ -151,7 +174,7 @@ body {
 
 /* ========== SECTION LABELS ========== */
 .sec-label {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 2px;
@@ -165,7 +188,7 @@ body {
 
 /* ========== FORM CONTROLS ========== */
 select, button {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 12px;
 }
 select {
@@ -184,10 +207,10 @@ select {
   background-position: right 10px center;
 }
 select:focus {
-  border-color: rgba(52,211,153,0.4);
+  border-color: rgba(29,184,242,0.4);
 }
 select option {
-  background: #0a0b14;
+  background: #0d1124;
   color: var(--txt);
 }
 
@@ -207,7 +230,7 @@ select option {
 }
 .btn-primary {
   background: var(--green);
-  color: #060610;
+  color: #121A38;
   border-color: var(--green);
   font-weight: 500;
 }
@@ -215,22 +238,22 @@ select option {
   filter: brightness(1.1);
 }
 .btn-danger {
-  border-color: rgba(251,113,133,0.3);
+  border-color: rgba(255,129,110,0.3);
   color: var(--rose);
 }
 .btn-danger:hover {
-  background: rgba(251,113,133,0.1);
+  background: rgba(255,129,110,0.1);
   border-color: var(--rose);
 }
 .btn-stop {
   background: var(--rose);
-  color: #060610;
+  color: #121A38;
   border-color: var(--rose);
   font-weight: 500;
 }
 .btn-muted {
   background: var(--amber);
-  color: #060610;
+  color: #121A38;
   border-color: var(--amber);
   font-weight: 500;
 }
@@ -262,7 +285,7 @@ select option {
   transition: height 0.05s linear;
 }
 .meter-db {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 11px;
   color: var(--dim);
   min-width: 50px;
@@ -295,13 +318,13 @@ select option {
 }
 .vad-dot.speaking {
   background: var(--green);
-  box-shadow: 0 0 10px rgba(52,211,153,0.6);
+  box-shadow: 0 0 10px rgba(29,184,242,0.6);
 }
 .vad-dot.silent {
-  background: rgba(52,211,153,0.25);
+  background: rgba(29,184,242,0.25);
 }
 .vad-label {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 11px;
   color: var(--dim);
   letter-spacing: 0.5px;
@@ -343,17 +366,17 @@ select option {
   background: var(--dim);
   transition: all .3s;
 }
-.s-dot.ok { background: var(--green); box-shadow: 0 0 6px rgba(52,211,153,0.4); }
-.s-dot.warn { background: var(--amber); box-shadow: 0 0 6px rgba(251,191,36,0.4); }
-.s-dot.err { background: var(--rose); box-shadow: 0 0 6px rgba(251,113,133,0.4); }
+.s-dot.ok { background: var(--green); box-shadow: 0 0 6px rgba(29,184,242,0.4); }
+.s-dot.warn { background: var(--amber); box-shadow: 0 0 6px rgba(254,177,0,0.4); }
+.s-dot.err { background: var(--rose); box-shadow: 0 0 6px rgba(255,129,110,0.4); }
 .s-label {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 11px;
   color: var(--dim);
   letter-spacing: 0.5px;
 }
 .s-value {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 11px;
   color: var(--bright);
 }
@@ -372,7 +395,7 @@ select option {
   padding: 10px 12px;
 }
 .metric-label {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 9px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
@@ -380,7 +403,7 @@ select option {
   margin-bottom: 4px;
 }
 .metric-value {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 15px;
   font-weight: 500;
   color: var(--bright);
@@ -411,8 +434,8 @@ select option {
   border-color: rgba(255,255,255,0.1);
 }
 .stt-option.active {
-  border-color: rgba(52,211,153,0.4);
-  background: rgba(52,211,153,0.04);
+  border-color: rgba(29,184,242,0.4);
+  background: rgba(29,184,242,0.04);
 }
 .stt-option input[type="radio"] {
   accent-color: var(--green);
@@ -422,7 +445,7 @@ select option {
   flex: 1;
 }
 .stt-option-name {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 12px;
   color: var(--txt);
 }
@@ -445,20 +468,20 @@ select option {
   transition: all .2s;
 }
 .llm-tier.serving {
-  border-color: rgba(52,211,153,0.4);
-  background: rgba(52,211,153,0.06);
+  border-color: rgba(29,184,242,0.4);
+  background: rgba(29,184,242,0.06);
 }
 .llm-tier.breaker-open {
-  border-color: rgba(251,113,133,0.4);
-  background: rgba(251,113,133,0.04);
+  border-color: rgba(255,129,110,0.4);
+  background: rgba(255,129,110,0.04);
   opacity: 0.7;
 }
 .llm-tier.breaker-half_open {
-  border-color: rgba(251,191,36,0.4);
-  background: rgba(251,191,36,0.04);
+  border-color: rgba(254,177,0,0.4);
+  background: rgba(254,177,0,0.04);
 }
 .llm-rank {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 10px;
   color: var(--dim);
   width: 14px;
@@ -469,7 +492,7 @@ select option {
   min-width: 0;
 }
 .llm-tier-name {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 12px;
   color: var(--txt);
 }
@@ -482,7 +505,7 @@ select option {
   white-space: nowrap;
 }
 .llm-badge {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 9px;
   text-transform: uppercase;
   padding: 2px 6px;
@@ -491,18 +514,18 @@ select option {
 }
 .llm-badge.serving {
   color: var(--green);
-  background: rgba(52,211,153,0.12);
-  border: 1px solid rgba(52,211,153,0.4);
+  background: rgba(29,184,242,0.12);
+  border: 1px solid rgba(29,184,242,0.4);
 }
 .llm-badge.open {
   color: var(--rose);
-  background: rgba(251,113,133,0.12);
-  border: 1px solid rgba(251,113,133,0.4);
+  background: rgba(255,129,110,0.12);
+  border: 1px solid rgba(255,129,110,0.4);
 }
 .llm-badge.half_open {
   color: var(--amber);
-  background: rgba(251,191,36,0.12);
-  border: 1px solid rgba(251,191,36,0.4);
+  background: rgba(254,177,0,0.12);
+  border: 1px solid rgba(254,177,0,0.4);
 }
 .llm-badge.standby {
   color: var(--dim);
@@ -539,7 +562,7 @@ select option {
   padding: 40px;
 }
 .setup-card .tag {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 10px;
   letter-spacing: 3px;
   text-transform: uppercase;
@@ -558,7 +581,7 @@ select option {
 }
 .setup-field label {
   display: block;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 1.5px;
@@ -573,14 +596,14 @@ select option {
   border: 1px solid var(--bdr);
   border-radius: 6px;
   color: var(--txt);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 13px;
   font-weight: 300;
   outline: none;
   transition: border-color .25s;
 }
 .setup-field input[type="text"]:focus {
-  border-color: rgba(52,211,153,0.5);
+  border-color: rgba(29,184,242,0.5);
 }
 .setup-field input[type="text"]::placeholder {
   color: var(--dim);
@@ -599,10 +622,10 @@ select option {
   padding: 14px;
   margin-top: 8px;
   background: var(--green);
-  color: #060610;
+  color: #121A38;
   border: none;
   border-radius: 8px;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 3px;
@@ -644,7 +667,7 @@ select option {
   opacity: 0.9;
 }
 .gm-label {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Ubuntu', Verdana, sans-serif;
   font-size: 8px;
   font-weight: 500;
   fill: var(--bright);
@@ -666,7 +689,7 @@ select option {
   scrollbar-color: rgba(255,255,255,0.04) transparent;
 }
 #transcript-bar .t-label {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 10px;
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -752,7 +775,7 @@ select option {
 
     <button id="btn-start-session">Start Session</button>
     <div style="text-align:center;margin-top:16px;">
-      <a href="/sessions" style="font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--dim);text-decoration:none;transition:color .2s;" onmouseover="this.style.color='var(--green)'" onmouseout="this.style.color='var(--dim)'">Browse past sessions &rarr;</a>
+      <a href="/sessions" style="font-family:'Ubuntu Mono',monospace;font-size:10px;letter-spacing:1px;color:var(--dim);text-decoration:none;transition:color .2s;" onmouseover="this.style.color='var(--green)'" onmouseout="this.style.color='var(--dim)'">Browse past sessions &rarr;</a>
     </div>
   </div>
 </div>
@@ -899,8 +922,8 @@ const S = {
 };
 
 const COLORS = [
-  '#34d399','#a78bfa','#fb7185','#fbbf24','#60a5fa',
-  '#22d3ee','#fb923c','#f0abfc','#2dd4bf','#a3e635'
+  '#1DB8F2','#71609E','#FF816E','#FEB100','#0058AB',
+  '#00D5D0','#00828E','#D4D3F1','#BE4D00','#8F3237'
 ];
 
 // VAD parameters
@@ -1462,7 +1485,7 @@ function drawWaveform(buf) {
   const H = canvas.height = canvas.clientHeight;
 
   ctx.clearRect(0, 0, W, H);
-  ctx.strokeStyle = 'rgba(52,211,153,0.4)';
+  ctx.strokeStyle = 'rgba(29,184,242,0.4)';
   ctx.lineWidth = 1;
   ctx.beginPath();
 

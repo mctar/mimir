@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>Mimir Graph Export</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Ubuntu+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -18,7 +18,7 @@
 body {
   background: var(--bg);
   color: var(--bright);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Ubuntu', Verdana, sans-serif;
   overflow: hidden;
 }
 
@@ -40,7 +40,7 @@ body {
   position: absolute;
   bottom: 20px;
   right: 30px;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 10px;
   color: rgba(255,255,255,0.12);
   letter-spacing: 1px;
@@ -71,7 +71,7 @@ body {
   line-height: 1.2;
 }
 .pdf-mode .meta-date {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 13px;
   color: var(--dim);
   letter-spacing: 0.5px;
@@ -80,7 +80,7 @@ body {
 .pdf-mode .meta-divider {
   width: 60px;
   height: 2px;
-  background: linear-gradient(90deg, #34d399, #60a5fa);
+  background: linear-gradient(90deg, #121A38 0%, #0058AB 30%, #1DB8F2 70%, #00D5D0 100%);
   border-radius: 1px;
   margin-bottom: 40px;
 }
@@ -88,7 +88,7 @@ body {
   margin-bottom: 40px;
 }
 .pdf-mode .meta-section-label {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 2px;
@@ -113,7 +113,7 @@ body {
   color: var(--bright);
 }
 .pdf-mode .meta-stat-label {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 1.5px;
@@ -141,7 +141,7 @@ body {
   color: var(--txt);
 }
 .pdf-mode .legend-cat {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 10px;
   color: var(--dim);
   text-transform: uppercase;
@@ -170,7 +170,7 @@ body {
   transition: d 0.6s ease-out;
 }
 .edge-text {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 11px;
   font-weight: 300;
   fill: rgba(255,255,255,0.22);
@@ -187,7 +187,7 @@ body {
 .n-inner { opacity: 0.12; }
 .n-dot { opacity: 1; }
 .n-label {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Ubuntu', Verdana, sans-serif;
   font-weight: 600;
   font-size: 16px;
   fill: var(--bright);
@@ -196,7 +196,7 @@ body {
   letter-spacing: 0.2px;
 }
 .n-cat {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-weight: 300;
   font-size: 11px;
   fill: var(--dim);
@@ -251,8 +251,8 @@ body {
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script>
 const COLORS = [
-  '#34d399','#a78bfa','#fb7185','#fbbf24','#60a5fa',
-  '#22d3ee','#fb923c','#f0abfc','#2dd4bf','#a3e635'
+  '#1DB8F2','#71609E','#FF816E','#FEB100','#0058AB',
+  '#00D5D0','#00828E','#D4D3F1','#BE4D00','#8F3237'
 ];
 const colorMap = {};
 let colorIdx = 0;
