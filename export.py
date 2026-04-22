@@ -51,6 +51,43 @@ RULES (non-negotiable):
 
 EXPORT_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "export-graph.html")
 
+_NAV_SCRIPT = """<script>
+(function(){
+  var slides = document.querySelectorAll('.slide');
+  if (!slides.length) return;
+  var idx = 0;
+  function show(n) {
+    slides[idx].classList.remove('active');
+    slides[idx].classList.add('exit');
+    setTimeout(function(){ slides[idx].classList.remove('exit'); }, 600);
+    idx = Math.max(0, Math.min(n, slides.length - 1));
+    slides[idx].classList.add('active');
+    var dots = document.querySelectorAll('.dot');
+    dots.forEach(function(d,i){ d.classList.toggle('active', i===idx); });
+    var ctr = document.querySelector('.counter');
+    if (ctr) ctr.textContent = (idx+1) + ' / ' + slides.length;
+  }
+  document.addEventListener('keydown', function(e){
+    if (e.key==='ArrowRight'||e.key===' ') show(idx+1);
+    if (e.key==='ArrowLeft') show(idx-1);
+  });
+  document.querySelectorAll('.dot').forEach(function(d,i){
+    d.addEventListener('click', function(){ show(i); });
+  });
+})();
+</script>"""
+
+
+def _inject_nav(html: str) -> str:
+    """Inject navigation JS if the LLM didn't generate it (e.g. due to truncation)."""
+    if 'ArrowRight' in html or 'keydown' in html:
+        return html
+    for tag in ('</body>', '</html>'):
+        idx = html.lower().rfind(tag)
+        if idx >= 0:
+            return html[:idx] + _NAV_SCRIPT + '\n' + html[idx:]
+    return html + '\n' + _NAV_SCRIPT
+
 
 def find_peak_snapshot(snapshots: list[dict]) -> dict:
     """Find the snapshot with the most active nodes (best visual)."""
@@ -424,6 +461,7 @@ Output ONLY the complete HTML. Nothing else."""
     if not html_text:
         raise RuntimeError(f"All LLM tiers failed. Last error: {last_error}")
 
+    html_text = _inject_nav(html_text)
     os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
     with open(output, "w", encoding="utf-8") as f:
         f.write(html_text)
