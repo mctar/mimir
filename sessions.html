@@ -311,6 +311,77 @@ h1 {
   color: var(--dim);
   font-size: 10px;
 }
+/* ─── Recap inline edit ─── */
+.recap-edit-btn {
+  background: none;
+  border: none;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 6px;
+  opacity: 0.6;
+  transition: opacity .15s, color .15s;
+  vertical-align: middle;
+}
+.recap-edit-btn:hover { opacity: 1; color: var(--green); }
+.recap-edit-textarea {
+  width: 100%;
+  min-height: 80px;
+  background: var(--card);
+  border: 1px solid var(--bdr);
+  border-radius: 6px;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 10px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.recap-edit-textarea:focus { border-color: var(--green); outline: none; }
+.recap-edit-input {
+  background: var(--card);
+  border: 1px solid var(--bdr);
+  border-radius: 4px;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  padding: 4px 8px;
+  width: calc(100% - 36px);
+}
+.recap-edit-input:focus { border-color: var(--green); outline: none; }
+.recap-edit-del {
+  background: none;
+  border: none;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 0 4px;
+  vertical-align: middle;
+}
+.recap-edit-del:hover { color: var(--rose); }
+.recap-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+.btn-sm {
+  font-size: 9px;
+  padding: 5px 12px;
+}
+.recap-edit-error {
+  color: var(--rose);
+  font-family: 'Ubuntu Mono', monospace;
+  font-size: 11px;
+}
+.recap-edited-badge {
+  font-family: 'Ubuntu Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--green);
+  margin-left: 8px;
+  vertical-align: middle;
+}
 .recap-conn-insight {
   font-size: 14px;
   line-height: 1.6;
