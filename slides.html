@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mímir — Live Slides</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --accent: #0058AB;
+    --accent2: #00D5D0;
+    --text: #e8eaf0;
+    --muted: #5a6280;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+    --section-pos: #0058AB;
+    --section-val: #00D5D0;
+    --section-d2: #7c5cbf;
+  }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font); overflow: hidden; }
+
+  /* ── Deck container ── */
+  #deck { position: relative; width: 100vw; height: calc(100vh - 60px); }
+
+  /* ── Slides ── */
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; justify-content: flex-start;
+    padding: 52px 72px 36px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.45s ease;
+  }
+  .slide.active { opacity: 1; pointer-events: auto; }
+
+  .slide-section {
+    font-size: 11px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase;
+    margin-bottom: 18px; opacity: 0.7;
+  }
+  .slide[data-section="Positioning"] .slide-section { color: var(--section-pos); }
+  .slide[data-section="Value Proposition"] .slide-section { color: var(--section-val); }
+  .slide[data-section="Day 2 & Day 3"] .slide-section { color: var(--section-d2); }
+
+  .slide-title {
+    font-size: clamp(28px, 4vw, 52px); font-weight: 700; line-height: 1.15;
+    margin-bottom: 40px; max-width: 80%;
+  }
+
+  .slide-bullets {
+    list-style: none; display: flex; flex-direction: column; gap: 16px;
+    flex: 1;
+  }
+  .slide-bullets li {
+    display: flex; align-items: flex-start; gap: 14px;
+    font-size: clamp(16px, 2vw, 22px); line-height: 1.5; opacity: 0;
+    animation: bullet-in 0.5s ease forwards;
+  }
+  .slide-bullets li::before {
+    content: ''; flex-shrink: 0; margin-top: 10px;
+    width: 6px; height: 6px; border-radius: 50%; background: var(--accent2);
+  }
+  .slide[data-section="Value Proposition"] .slide-bullets li::before { background: var(--section-val); }
+  .slide[data-section="Day 2 & Day 3"] .slide-bullets li::before { background: var(--section-d2); }
+
+  .slide-empty .slide-title { opacity: 0.3; }
+  .slide-empty .slide-placeholder {
+    font-size: 18px; color: var(--muted); font-style: italic; margin-top: 8px;
+  }
+
+  .slide-quote {
+    margin-top: 32px; padding: 18px 24px;
+    border-left: 3px solid var(--accent);
+    font-size: clamp(14px, 1.6vw, 18px); font-style: italic; color: #a0aec0;
+    opacity: 0; animation: bullet-in 0.5s ease forwards;
+    max-width: 80%;
+  }
+  .slide[data-section="Value Proposition"] .slide-quote { border-left-color: var(--section-val); }
+  .slide[data-section="Day 2 & Day 3"] .slide-quote { border-left-color: var(--section-d2); }
+
+  @keyframes bullet-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Navigation bar ── */
+  #nav {
+    position: fixed; bottom: 0; left: 0; right: 0; height: 60px;
+    background: #0d0d14; border-top: 1px solid #1e2030;
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px; padding: 0 20px;
+  }
+  .dot {
+    width: 28px; height: 28px; border-radius: 5px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    border: 1.5px solid #2a2d45; background: transparent;
+    transition: all 0.2s ease; font-size: 9px; color: var(--muted);
+    position: relative;
+  }
+  .dot:hover { border-color: var(--accent); }
+  .dot.filled { border-color: #2a4a7f; background: #131a30; }
+  .dot.active  { border-color: var(--accent); background: #0a1f3a; }
+  .dot .dot-label {
+    position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+    white-space: nowrap; font-size: 10px; color: var(--text); background: #1a1d2e;
+    padding: 3px 6px; border-radius: 3px; pointer-events: none;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .dot:hover .dot-label { opacity: 1; }
+
+  /* Section dividers in nav */
+  .nav-sep { width: 1px; height: 24px; background: #2a2d45; margin: 0 4px; }
+
+  /* Counter */
+  #counter {
+    position: fixed; top: 18px; right: 24px;
+    font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+
+  /* Status indicator */
+  #status-pill {
+    position: fixed; top: 16px; left: 24px;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--muted);
+  }
+  #status-led {
+    width: 8px; height: 8px; border-radius: 50%; background: #444;
+    transition: background 0.3s;
+  }
+  #status-led.on { background: #22c55e; animation: led-pulse 3s infinite; }
+  #status-led.think { background: #a855f7; animation: led-pulse 0.8s infinite; }
+  @keyframes led-pulse {
+    0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
+  }
+</style>
+</head>
+<body>
+
+<div id="status-pill">
+  <div id="status-led"></div>
+  <span id="status-text">Connecting…</span>
+</div>
+
+<div id="counter">1 / 11</div>
+
+<div id="deck">
+  <!-- Slides injected by JS -->
+</div>
+
+<div id="nav">
+  <!-- Dots injected by JS -->
+</div>
+
+<script>
+// ── Slide template (mirrors SLIDE_TEMPLATE in app.py) ──────────────────────
+const SLIDES = [
+  {id:'pos_what_sell', section:'Positioning',       title:'What we sell?'},
+  {id:'pos_why_now',   section:'Positioning',       title:'Why now?'},
+  {id:'pos_why_us',    section:'Positioning',       title:'Why are we well positioned?'},
+  {id:'pos_to_whom',   section:'Positioning',       title:'To Whom?'},
+  {id:'pos_statement', section:'Positioning',       title:'Position statement'},
+  {id:'val_what_do',   section:'Value Proposition', title:'What we do?'},
+  {id:'val_how',       section:'Value Proposition', title:'How we do it?'},
+  {id:'val_paid',      section:'Value Proposition', title:'What do we get paid?'},
+  {id:'val_scope',     section:'Value Proposition', title:'Scope, boundaries & non-goals'},
+  {id:'d2_targets',    section:'Day 2 & Day 3',     title:'Targets and horizon'},
+  {id:'d2_priorities', section:'Day 2 & Day 3',     title:'Priorities and orchestration'},
+];
+
+// ── State ──────────────────────────────────────────────────────────────────
+let currentIdx = 0;
+let manualNav = false;
+let manualTimeout = null;
+
+// ── Build DOM ──────────────────────────────────────────────────────────────
+const deck = document.getElementById('deck');
+const nav  = document.getElementById('nav');
+
+SLIDES.forEach((s, i) => {
+  // Slide
+  const el = document.createElement('div');
+  el.className = 'slide slide-empty' + (i === 0 ? ' active' : '');
+  el.id = 'slide-' + s.id;
+  el.dataset.section = s.section;
+  el.dataset.idx = i;
+  el.innerHTML = `
+    <div class="slide-section">${s.section}</div>
+    <div class="slide-title">${s.title}</div>
+    <ul class="slide-bullets" id="bullets-${s.id}"></ul>
+    <div class="slide-placeholder">Waiting for content…</div>
+    <blockquote class="slide-quote" id="quote-${s.id}" style="display:none"></blockquote>
+  `;
+  deck.appendChild(el);
+
+  // Nav dot — add section separator before Value Prop and Day 2&3
+  if (i === 5 || i === 9) {
+    nav.insertAdjacentHTML('beforeend', '<div class="nav-sep"></div>');
+  }
+  const dot = document.createElement('div');
+  dot.className = 'dot' + (i === 0 ? ' active' : '');
+  dot.id = 'dot-' + i;
+  dot.title = s.title;
+  dot.innerHTML = `<span class="dot-label">${s.title}</span>`;
+  dot.addEventListener('click', () => goTo(i, true));
+  nav.appendChild(dot);
+});
+
+function goTo(idx, manual) {
+  document.querySelectorAll('.slide').forEach((el, i) => el.classList.toggle('active', i === idx));
+  document.querySelectorAll('.dot').forEach((el, i) => el.classList.toggle('active', i === idx));
+  document.getElementById('counter').textContent = `${idx + 1} / ${SLIDES.length}`;
+  currentIdx = idx;
+  if (manual) {
+    manualNav = true;
+    clearTimeout(manualTimeout);
+    manualTimeout = setTimeout(() => { manualNav = false; }, 10000);
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === ' ') goTo(Math.min(currentIdx + 1, SLIDES.length - 1), true);
+  if (e.key === 'ArrowLeft') goTo(Math.max(currentIdx - 1, 0), true);
+});
+
+// ── Apply slide update ─────────────────────────────────────────────────────
+function applySlideUpdate(slides) {
+  let latestIdx = -1;
+  let latestTs = 0;
+
+  for (const [sid, data] of Object.entries(slides)) {
+    const bullets = data.bullets || [];
+    const quote   = data.key_quote;
+    const updAt   = data.updated_at;
+
+    const bulletsEl = document.getElementById('bullets-' + sid);
+    const quoteEl   = document.getElementById('quote-'   + sid);
+    const slideEl   = document.getElementById('slide-'   + sid);
+    if (!bulletsEl || !slideEl) continue;
+
+    // Clear and re-render bullets with staggered animation delay
+    bulletsEl.innerHTML = '';
+    bullets.forEach((b, i) => {
+      const li = document.createElement('li');
+      li.textContent = b;
+      li.style.animationDelay = `${i * 80}ms`;
+      bulletsEl.appendChild(li);
+    });
+
+    // Quote
+    if (quote) {
+      quoteEl.textContent = '\u201C' + quote + '\u201D';
+      quoteEl.style.display = '';
+    } else {
+      quoteEl.style.display = 'none';
+    }
+
+    // Mark slide as no longer empty
+    if (bullets.length > 0) {
+      slideEl.classList.remove('slide-empty');
+      const ph = slideEl.querySelector('.slide-placeholder');
+      if (ph) ph.remove();
+    }
+
+    // Track most recently updated for auto-advance
+    if (updAt && updAt > latestTs) {
+      latestTs = updAt;
+      latestIdx = SLIDES.findIndex(s => s.id === sid);
+    }
+
+    // Update dot fill state
+    const dotIdx = SLIDES.findIndex(s => s.id === sid);
+    const dotEl = document.getElementById('dot-' + dotIdx);
+    if (dotEl && bullets.length > 0) dotEl.classList.add('filled');
+  }
+
+  // Auto-advance to most recently updated slide (unless user is navigating)
+  if (latestIdx >= 0 && !manualNav) goTo(latestIdx, false);
+}
+
+function resetSlides() {
+  SLIDES.forEach((s, i) => {
+    const bulletsEl = document.getElementById('bullets-' + s.id);
+    const quoteEl   = document.getElementById('quote-'   + s.id);
+    const slideEl   = document.getElementById('slide-'   + s.id);
+    const dotEl     = document.getElementById('dot-'     + i);
+    if (bulletsEl) bulletsEl.innerHTML = '';
+    if (quoteEl)   { quoteEl.textContent = ''; quoteEl.style.display = 'none'; }
+    if (slideEl) {
+      slideEl.classList.add('slide-empty');
+      if (!slideEl.querySelector('.slide-placeholder')) {
+        slideEl.insertAdjacentHTML('beforeend', '<div class="slide-placeholder">Waiting for content…</div>');
+      }
+    }
+    if (dotEl) dotEl.classList.remove('filled');
+  });
+  goTo(0, false);
+}
+
+// ── WebSocket ──────────────────────────────────────────────────────────────
+const led  = document.getElementById('status-led');
+const stxt = document.getElementById('status-text');
+let ws, reconnectDelay = 1000;
+
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+  ws.onopen = () => {
+    led.className = 'on';
+    stxt.textContent = 'Live';
+    reconnectDelay = 1000;
+  };
+
+  ws.onclose = () => {
+    led.className = '';
+    stxt.textContent = 'Reconnecting…';
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 2, 15000);
+  };
+
+  ws.onmessage = e => {
+    let d;
+    try { d = JSON.parse(e.data); } catch { return; }
+
+    if (d.type === 'slide_update' && d.slides) {
+      led.className = 'think';
+      setTimeout(() => { led.className = 'on'; }, 1500);
+      applySlideUpdate(d.slides);
+    }
+    else if (d.type === 'session_reset') {
+      resetSlides();
+    }
+    else if (d.type === 'restore' && d.slides) {
+      applySlideUpdate(d.slides);
+    }
+    else if (d.type === 'status' && d.status === 'connected') {
+      led.className = 'on';
+      stxt.textContent = 'Live';
+    }
+  };
+
+  ws.onerror = () => {
+    led.className = '';
+    stxt.textContent = 'Error';
+  };
+}
+
+connect();
+</script>
+</body>
+</html>
