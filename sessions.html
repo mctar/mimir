@@ -1636,6 +1636,7 @@ function renderMindMap() {
   exportBar.innerHTML = `
     <button class="btn btn-ghost" onclick="exportGraph('pdf')">Export PDF</button>
     <button class="btn btn-ghost" onclick="exportGraph('video')">Export Video</button>
+    ${current && current.session.has_recap ? `<button class="btn btn-ghost" onclick="exportGraph('slides')">Export Slides</button>` : ''}
   `;
   wrap.appendChild(exportBar);
 
@@ -2083,7 +2084,8 @@ async function exportGraph(fmt) {
   const origText = btn.textContent;
 
   btn.classList.add('exporting');
-  btn.textContent = fmt === 'pdf' ? 'Generating PDF...' : 'Rendering video...';
+  const fmtLabels = {pdf: 'Generating PDF...', video: 'Rendering video...', slides: 'Generating slides...'};
+  btn.textContent = fmtLabels[fmt] || `Exporting ${fmt}...`;
   toast(`Starting ${fmt.toUpperCase()} export...`);
 
   try {
@@ -2110,7 +2112,8 @@ async function exportGraph(fmt) {
     if (status === 'done') {
       const a = document.createElement('a');
       a.href = `/v1/sessions/${sid}/export/${fmt}/download`;
-      a.download = `mimir-${sid}.${fmt === 'pdf' ? 'pdf' : 'mp4'}`;
+      const fmtExt = {pdf: 'pdf', video: 'mp4', slides: 'html'};
+      a.download = `mimir-${sid}.${fmtExt[fmt] || fmt}`;
       document.body.appendChild(a);
       a.click();
       a.remove();

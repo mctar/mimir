@@ -14,9 +14,38 @@ Prerequisites:
     pip install playwright && playwright install chromium
 """
 
-import argparse, asyncio, json, os, subprocess, sys, tempfile
+import argparse, asyncio, json, logging, os, re, subprocess, sys, tempfile
 
+import aiohttp
 import db
+
+
+# ─── LLM config for slides (mirrors routes_facilitator.py pattern) ────────────
+
+ANTHROPIC_API_KEY    = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_BASE_URL   = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+ANTHROPIC_AUTH_TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+HUGIN_BASE_URL       = os.environ.get("HUGIN_BASE_URL", "https://munin.btrbot.com")
+HUGIN_CF_ID          = os.environ.get("HUGIN_CF_ID", "")
+HUGIN_CF_SECRET      = os.environ.get("HUGIN_CF_SECRET", "")
+GEMINI_API_KEY       = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_BASE_URL      = "https://generativelanguage.googleapis.com/v1beta/openai"
+
+_SLIDES_SYSTEM = """\
+You are an expert presentation designer. Create complete, beautiful HTML slide decks.
+
+RULES (non-negotiable):
+- Output ONLY raw HTML. No markdown fences, no explanation, nothing else.
+- Every slide must fit the viewport exactly: height:100vh; overflow:hidden; margin:0; padding:0.
+- The deck must be fully self-contained: no external URLs, no CDN links.
+- Navigation: left/right arrow keys and space bar advance slides.
+- Use CSS transitions between slides (fade or horizontal slide).
+- Style: dark, modern, bold. Background: #0a0a0f. Accent: #7c3aed.
+- Typography: system fonts only (-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif).
+- Large text, high contrast, minimal clutter — legible from the back of a room.
+- Slide structure: title, overview/pitch, key points (1 per slide), concepts map,
+  non-obvious connections, tensions, conclusion.
+"""
 
 
 EXPORT_HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "export-graph.html")
@@ -231,6 +260,161 @@ async def export_video(
     finally:
         import shutil
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ─── HTML Slides Export ───
+
+async def _llm_call_slides(tier: dict, system: str, user: str) -> str:
+    """Call a single LLM tier for slides generation. No JSON prefix applied."""
+    provider = tier["provider"]
+    model = tier["model"]
+    timeout = aiohttp.ClientTimeout(total=120)
+
+    if provider == "anthropic":
+        url = f"{ANTHROPIC_BASE_URL}/v1/messages"
+        headers = {"anthropic-version": "2023-06-01", "content-type": "application/json"}
+        if ANTHROPIC_AUTH_TOKEN:
+            headers["Authorization"] = f"Bearer {ANTHROPIC_AUTH_TOKEN}"
+        else:
+            headers["x-api-key"] = ANTHROPIC_API_KEY
+        body = {"model": model, "max_tokens": 8192, "system": system,
+                "messages": [{"role": "user", "content": user}]}
+        async with aiohttp.ClientSession() as s:
+            async with s.post(url, headers=headers, json=body, timeout=timeout) as r:
+                if r.status != 200:
+                    raise RuntimeError(f"Anthropic error {r.status}: {await r.text()}")
+                data = await r.json()
+                return data["content"][0]["text"]
+
+    if provider == "hugin":
+        url = f"{HUGIN_BASE_URL}/v1/chat/completions"
+        headers = {"Content-Type": "application/json"}
+        if HUGIN_CF_ID and HUGIN_CF_SECRET:
+            headers["CF-Access-Client-Id"] = HUGIN_CF_ID
+            headers["CF-Access-Client-Secret"] = HUGIN_CF_SECRET
+    else:  # gemini
+        url = f"{GEMINI_BASE_URL}/chat/completions"
+        headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
+
+    body = {
+        "model": model, "max_tokens": 8192,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+    }
+    async with aiohttp.ClientSession() as s:
+        async with s.post(url, headers=headers, json=body, timeout=timeout) as r:
+            if r.status != 200:
+                raise RuntimeError(f"{provider} error {r.status}: {await r.text()}")
+            data = await r.json()
+            return data["choices"][0]["message"]["content"]
+
+
+async def export_slides(session_id: str, output: str, db_path: str = "livemind.db",
+                        chain: list[dict] | None = None):
+    """Generate a self-contained HTML slide deck from a session recap via LLM."""
+    if not db._db:
+        await db.init_db(db_path)
+
+    sessions = await db.list_sessions()
+    session = next((s for s in sessions if s["id"] == session_id), None)
+    if not session:
+        sessions = await db.list_sessions(archived=True)
+        session = next((s for s in sessions if s["id"] == session_id), None)
+    if not session:
+        raise ValueError(f"Session '{session_id}' not found.")
+
+    recap_data = await db.get_recap(session_id)
+    if not recap_data or not recap_data.get("recap"):
+        raise ValueError(f"Session '{session_id}' has no recap. Generate one first.")
+    recap = recap_data["recap"]
+
+    # Build concept summary from peak graph snapshot
+    snapshots = await db.get_session_snapshots(session_id)
+    nodes_text = edges_text = ""
+    if snapshots:
+        peak = find_peak_snapshot(snapshots)
+        nodes = peak["graph"].get("nodes", {})
+        active = [n for n in nodes.values() if n.get("state") == "active"]
+        nodes_text = ", ".join(n.get("label", n.get("id", "?")) for n in active[:24])
+        edges_text = "; ".join(
+            f"{e.get('source', '?')} → {e.get('target', '?')}"
+            for e in peak["graph"].get("edges", [])[:20]
+        )
+
+    duration = ""
+    if session.get("ended_at") and session.get("created_at"):
+        duration = format_duration(session["ended_at"] - session["created_at"])
+
+    def _fmt_list(value) -> str:
+        if isinstance(value, list):
+            return "\n".join(
+                f"- {item.get('topics', item) if isinstance(item, dict) else item}"
+                + (f": {item['insight']}" if isinstance(item, dict) and item.get("insight") else "")
+                for item in value
+            )
+        return str(value) if value else ""
+
+    user_prompt = f"""Create a complete HTML presentation for this session.
+
+Topic: {session.get('topic', 'Untitled')}
+Date: {format_date(session.get('created_at', 0))} | Duration: {duration or 'N/A'}
+
+RECAP:
+Pitch: {recap.get('elevator_pitch', '')}
+Summary: {recap.get('summary', '')}
+
+Key takeaways:
+{_fmt_list(recap.get('key_takeaways', []))}
+
+Non-obvious connections:
+{_fmt_list(recap.get('non_obvious_connections', []))}
+
+Tensions & contradictions:
+{_fmt_list(recap.get('contradictions', []))}
+
+Active concepts:
+{nodes_text}
+
+Relationships:
+{edges_text}
+
+Output ONLY the complete HTML. Nothing else."""
+
+    if not chain:
+        raise RuntimeError("No LLM chain provided. Cannot generate slides.")
+
+    html_text = None
+    last_error = None
+    for tier in chain:
+        try:
+            raw = await _llm_call_slides(tier, _SLIDES_SYSTEM, user_prompt)
+            # Strip markdown fencing if present
+            m = re.search(r'```(?:html)?\s*(<!DOCTYPE|<html).*?```', raw, re.DOTALL | re.IGNORECASE)
+            if m:
+                raw = m.group(0).replace("```html", "").replace("```", "").strip()
+            # Find HTML start
+            for marker in ("<!DOCTYPE html>", "<!doctype html>", "<html"):
+                idx = raw.find(marker)
+                if idx >= 0:
+                    html_text = raw[idx:]
+                    break
+            if html_text:
+                if not html_text.rstrip().lower().endswith("</html>"):
+                    html_text = html_text.rstrip() + "\n</html>"
+                break
+        except Exception as e:
+            logging.warning("export_slides: tier %s/%s failed: %s",
+                            tier.get("provider"), tier.get("model"), e)
+            last_error = e
+
+    if not html_text:
+        raise RuntimeError(f"All LLM tiers failed. Last error: {last_error}")
+
+    os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
+    with open(output, "w", encoding="utf-8") as f:
+        f.write(html_text)
+
+    size_kb = os.path.getsize(output) / 1024
+    print(f"Slides saved: {output} ({size_kb:.0f} KB)")
 
 
 # ─── CLI ───
