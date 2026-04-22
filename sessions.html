@@ -802,6 +802,126 @@ h1 {
   color: var(--dim);
   margin-bottom: 4px;
 }
+/* ─── Q&A Tab ─────────────────────────────────────────────── */
+.qa-panel {
+  display: flex;
+  flex-direction: column;
+  height: 70vh;
+  min-height: 400px;
+}
+.qa-badge-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0 12px;
+  border-bottom: 1px solid var(--bdr);
+}
+.qa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--dim);
+  background: var(--card);
+  border: 1px solid var(--bdr);
+  border-radius: 10px;
+  padding: 3px 10px;
+}
+.qa-badge--active {
+  color: #3fb950;
+  background: rgba(63,185,80,0.08);
+  border-color: rgba(63,185,80,0.3);
+}
+.qa-badge-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--dim);
+  display: inline-block;
+  flex-shrink: 0;
+}
+.qa-badge--active .qa-badge-dot { background: #3fb950; }
+.qa-badge-hint { font-size: 11px; color: var(--dim); }
+.qa-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--dim) transparent;
+}
+.qa-empty {
+  color: var(--dim);
+  font-size: 13px;
+  text-align: center;
+  margin: auto;
+  padding: 40px 20px;
+}
+.qa-bubble {
+  padding: 8px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  max-width: 78%;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.qa-bubble--user {
+  background: var(--color-brand-blue);
+  color: white;
+  align-self: flex-end;
+  border-radius: 14px 14px 3px 14px;
+}
+.qa-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.qa-avatar {
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: var(--card);
+  border: 1px solid var(--bdr);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-family: 'Ubuntu Mono', monospace;
+  color: var(--dim);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.qa-bubble--assistant {
+  background: var(--panel);
+  color: var(--txt);
+  border: 1px solid var(--bdr);
+  border-radius: 3px 14px 14px 14px;
+}
+.qa-input-bar {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--bdr);
+}
+.qa-textarea {
+  flex: 1;
+  background: var(--panel);
+  border: 1px solid var(--bdr);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--txt);
+  font-family: inherit;
+  resize: none;
+  min-height: 36px;
+  max-height: 120px;
+  outline: none;
+  transition: border-color .2s;
+}
+.qa-textarea:focus { border-color: var(--color-brand-light); }
+.qa-send-btn { white-space: nowrap; align-self: flex-end; }
 </style>
 </head>
 <body>
@@ -865,6 +985,7 @@ h1 {
     <button class="tab-btn active" data-tab="recap">Recap</button>
     <button class="tab-btn" data-tab="transcript">Transcript</button>
     <button class="tab-btn" data-tab="mindmap">Graph</button>
+    <button class="tab-btn" data-tab="qa">Q&amp;A</button>
   </div>
 
   <!-- Recap Tab -->
@@ -912,6 +1033,28 @@ h1 {
       <span class="pb-frame" id="pb-frame">0 / 0</span>
       <button class="pb-speed" id="pb-speed" onclick="cycleSpeed()" title="Playback speed">5x</button>
       <button class="pb-speed" onclick="toggleGraphFullscreen()" title="Fullscreen">&#x26F6;</button>
+    </div>
+  </div>
+
+  <!-- Q&A Tab -->
+  <div id="tab-qa" class="tab-panel">
+    <div class="qa-panel">
+      <div class="qa-badge-bar">
+        <span id="qa-corpus-badge" class="qa-badge">
+          <span class="qa-badge-dot"></span>Chargement…
+        </span>
+        <span class="qa-badge-hint">· RAG activé sur le transcript de cette session</span>
+      </div>
+      <div class="qa-messages" id="qa-messages">
+        <div class="qa-empty">Posez une question sur cette session ou les documents du corpus.</div>
+      </div>
+      <div class="qa-input-bar">
+        <textarea id="qa-input" class="qa-textarea" rows="1"
+          placeholder="Posez une question sur cette session ou les documents du corpus…"
+          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendQaQuestion();}"></textarea>
+        <button id="qa-send" class="btn btn-primary qa-send-btn" onclick="sendQaQuestion()">Envoyer ↵</button>
+      </div>
     </div>
   </div>
 
