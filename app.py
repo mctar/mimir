@@ -12,7 +12,7 @@ import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 import aiohttp
-from loguru import logger
+from log import logger
 
 import db
 import stt_worker
@@ -295,7 +295,7 @@ async def lifespan(app: FastAPI):
     await db.init_db()
     # Default STT backend
     configure_stt("remote", remote_url=STT_SERVER_URL)
-    print(f"  STT: faster-whisper ({STT_SERVER_URL})")
+    logger.info(f"STT: faster-whisper ({STT_SERVER_URL})")
 
     async def _ws_broadcast(message: str):
         """Broadcast a text message to all connected WebSocket clients."""
@@ -315,10 +315,10 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(broadcast_loop())
     asyncio.create_task(snapshot_loop())
     asyncio.create_task(_synthesis_loop())
-    print(f"  Server ready — audio arrives from browser via WebSocket")
-    print(f"  Main:     http://0.0.0.0:{WS_PORT}/")
-    print(f"  Monitor:  http://0.0.0.0:{WS_PORT}/monitor")
-    print(f"  Sessions: http://0.0.0.0:{WS_PORT}/sessions\n")
+    logger.info("Server ready — audio arrives from browser via WebSocket")
+    logger.info(f"Main:     http://0.0.0.0:{WS_PORT}/")
+    logger.info(f"Monitor:  http://0.0.0.0:{WS_PORT}/monitor")
+    logger.info(f"Sessions: http://0.0.0.0:{WS_PORT}/sessions")
     yield
     await db.close_db()
 
@@ -2047,7 +2047,7 @@ async def ws_endpoint(websocket: WebSocket):
     connected_clients.add(websocket)
     with metrics_lock:
         metrics["ws_clients"] = len(connected_clients)
-    print(f"Browser connected ({len(connected_clients)} clients)")
+    logger.info(f"Browser connected ({len(connected_clients)} clients)")
     await websocket.send_json({
         "type": "status", "status": "connected",
         "message": "STT server ready",
@@ -2135,7 +2135,7 @@ async def ws_endpoint(websocket: WebSocket):
         client_sessions.pop(websocket, None)
         with metrics_lock:
             metrics["ws_clients"] = len(connected_clients)
-        print(f"Browser disconnected ({len(connected_clients)} clients)")
+        logger.info(f"Browser disconnected ({len(connected_clients)} clients)")
 
 
 # ─── Background loops ───
@@ -2175,7 +2175,7 @@ async def _synthesis_loop():
             try:
                 await routes_facilitator._run_synthesis()
             except Exception as e:
-                print(f"[synthesis_loop] error: {e}", flush=True)
+                logger.error(f"[synthesis_loop] error: {e}")
 
 
 async def snapshot_loop():
@@ -2201,9 +2201,9 @@ if __name__ == "__main__":
     p.add_argument("--port", type=int, default=8765, help="Bind port")
     args = p.parse_args()
 
-    print("=" * 50)
-    print("  Mímir : Server")
-    print("=" * 50 + "\n")
+    logger.info("=" * 50)
+    logger.info("Mímir : Server")
+    logger.info("=" * 50)
 
     WS_PORT = args.port
 
