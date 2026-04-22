@@ -2128,6 +2128,25 @@ def _publish_llm_state() -> None:
         metrics["cb_failures"] = total_failures
 
 
+# ─── Slide prompt injection ───────────────────────────────────────────────────
+_SLIDES_INJECT = """
+
+Additionally, return a "slide_updates" array in the same JSON object.
+For each slide whose topic is addressed in the CURRENT transcript excerpt, provide:
+  {"slide_id": "...", "bullets": ["...", "..."], "key_quote": "...or null"}
+Slide IDs and their questions:
+  pos_what_sell="What we sell?", pos_why_now="Why now?",
+  pos_why_us="Why are we well positioned?", pos_to_whom="To Whom?",
+  pos_statement="Position statement (one sentence summary)",
+  val_what_do="What we do?", val_how="How we do it?",
+  val_paid="What do we get paid?", val_scope="Scope, boundaries & non-goals",
+  d2_targets="Targets and horizon", d2_priorities="Priorities and orchestration"
+Only include slides with NEW relevant content from the current segment.
+Max 5 bullets per slide. Each bullet ≤ 15 words.
+If no slide is addressed in this segment, return "slide_updates": [].
+"""
+
+
 async def _proxy_claude(websocket: WebSocket, req: dict):
     """Proxy an LLM request server-side, walking the fallback chain."""
     global _summary
@@ -2136,7 +2155,9 @@ async def _proxy_claude(websocket: WebSocket, req: dict):
 
     t0 = time.time()
     try:
-        body = req.get("body", {})
+        body = dict(req.get("body", {}))
+        # Inject slide extraction into every graph analysis call
+        body["system"] = body.get("system", "") + _SLIDES_INJECT
         status_code, data, provider, model = await call_llm_chain(body)
         dt = time.time() - t0
 
