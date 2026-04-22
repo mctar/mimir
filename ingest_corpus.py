@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 import aiosqlite
 import corpus
+from log import logger
 
 
 def _parse_args():
@@ -67,7 +68,7 @@ async def ingest_file(db: aiosqlite.Connection, path: Path, chunk_size: int, ove
     try:
         text = extract_text(path)
     except Exception as e:
-        print(f" ERROR: {e}")
+        logger.error(f"Processing {path.name}: {e}")
         return
 
     chunks = chunk_text(text, chunk_size, overlap)
@@ -84,26 +85,26 @@ async def ingest_file(db: aiosqlite.Connection, path: Path, chunk_size: int, ove
             if "UNIQUE constraint" in str(e):
                 skipped += 1
             else:
-                print(f"\n  DB ERROR on chunk {i+1}: {e}")
+                logger.error(f"DB ERROR on chunk {i+1}: {e}")
                 skipped += 1
-    print(f" {stored} chunks stored, {skipped} skipped (duplicates)")
+    logger.info(f"{path.name}: {stored} chunks stored, {skipped} skipped (duplicates)")
 
 
 async def main():
     args = _parse_args()
     doc_dir = Path(args.dir)
     if not doc_dir.is_dir():
-        print(f"ERROR: {doc_dir} is not a directory")
+        logger.error(f"{doc_dir} is not a directory")
         sys.exit(1)
 
     supported = {".txt", ".md", ".pdf", ".docx", ".pptx"}
     files = [f for f in doc_dir.iterdir() if f.suffix.lower() in supported]
     if not files:
-        print(f"No supported files found in {doc_dir}")
+        logger.info(f"No supported files found in {doc_dir}")
         sys.exit(0)
 
-    print(f"Found {len(files)} files in {doc_dir}")
-    print(f"DB: {args.db}")
+    logger.info(f"Found {len(files)} files in {doc_dir}")
+    logger.info(f"DB: {args.db}")
 
     async with aiosqlite.connect(args.db) as db:
         await db.execute("""
@@ -118,7 +119,7 @@ async def main():
         for f in sorted(files):
             await ingest_file(db, f, args.chunk, args.overlap)
 
-    print("\nDone.")
+    logger.info("Done.")
 
 
 if __name__ == "__main__":
