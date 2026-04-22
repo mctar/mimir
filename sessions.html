@@ -1576,59 +1576,151 @@ function renderRecapV1(r) {
 function renderRecapV2(r) {
   let html = '';
 
-  // Elevator pitch — large, top
-  if (r.elevator_pitch) {
-    html += `<div class="recap-pitch">${esc(r.elevator_pitch)}</div>`;
+  // Elevator pitch
+  if (_editingField === 'elevator_pitch') {
+    html += `<div class="recap-pitch">
+      <textarea id="edit-elevator_pitch" class="recap-edit-textarea">${esc(r.elevator_pitch || '')}</textarea>
+      ${editActions()}
+    </div>`;
+  } else {
+    html += `<div class="recap-pitch" style="position:relative">
+      ${r.elevator_pitch ? esc(r.elevator_pitch) : ''}
+      ${editBtn('elevator_pitch')}
+    </div>`;
   }
 
   // Three things to retain
-  if (r.retain && r.retain.length) {
-    html += `<div class="recap-retain"><div class="recap-section"><h3>Three Things to Retain</h3><ol>`;
-    r.retain.forEach(item => { html += `<li>${esc(item)}</li>`; });
-    html += `</ol></div></div>`;
+  if (_editingField === 'retain') {
+    html += `<div class="recap-retain"><div class="recap-section">
+      <h3>Three Things to Retain</h3>
+      <ol id="edit-retain">
+        ${(r.retain || []).map(item => `<li><input type="text" class="recap-edit-input" value="${esc(item)}"> <button class="recap-edit-del" onclick="this.closest('li').remove()">×</button></li>`).join('')}
+      </ol>
+      <button class="btn btn-ghost btn-sm" onclick="addEditItem('edit-retain','li')">+ Add</button>
+      ${editActions()}
+    </div></div>`;
+  } else if (r.retain && r.retain.length) {
+    html += `<div class="recap-retain"><div class="recap-section">
+      <h3>Three Things to Retain ${editBtn('retain')}</h3>
+      <ol>${r.retain.map(item => `<li>${esc(item)}</li>`).join('')}</ol>
+    </div></div>`;
   }
 
   // Non-obvious connections
-  html += `<div class="recap-section"><h3>Non-Obvious Connections</h3>`;
-  if (r.non_obvious_connections && r.non_obvious_connections.length) {
-    r.non_obvious_connections.forEach(conn => {
-      const topics = (conn.topics || []).map(t => `<span class="recap-conn-chip">${esc(t)}</span>`).join('<span class="recap-conn-arrow">&harr;</span>');
-      html += `<div class="recap-conn-card">
-        <div class="recap-conn-topics">${topics}</div>
-        <div class="recap-conn-insight">${esc(conn.insight || '')}</div>
-      </div>`;
-    });
+  if (_editingField === 'non_obvious_connections') {
+    html += `<div class="recap-section"><h3>Non-Obvious Connections</h3>
+      <div id="edit-conns">
+        ${_editConns.map((conn, i) => {
+          const topics = (conn.topics || []).map(t => `<span class="recap-conn-chip">${esc(t)}</span>`).join('<span class="recap-conn-arrow">&harr;</span>');
+          return `<div class="recap-conn-card">
+            <div class="recap-conn-topics">${topics}</div>
+            <div class="recap-conn-insight">${esc(conn.insight || '')}</div>
+            <button class="recap-edit-del" onclick="deleteEditConn(${i})" title="Remove connection">×</button>
+          </div>`;
+        }).join('')}
+        ${_editConns.length === 0 ? '<p class="recap-empty-note">All connections removed.</p>' : ''}
+      </div>
+      ${editActions()}
+    </div>`;
   } else {
-    html += `<p class="recap-empty-note">No non-obvious connections surfaced this session.</p>`;
+    html += `<div class="recap-section"><h3>Non-Obvious Connections ${editBtn('non_obvious_connections')}</h3>`;
+    if (r.non_obvious_connections && r.non_obvious_connections.length) {
+      r.non_obvious_connections.forEach(conn => {
+        const topics = (conn.topics || []).map(t => `<span class="recap-conn-chip">${esc(t)}</span>`).join('<span class="recap-conn-arrow">&harr;</span>');
+        html += `<div class="recap-conn-card">
+          <div class="recap-conn-topics">${topics}</div>
+          <div class="recap-conn-insight">${esc(conn.insight || '')}</div>
+        </div>`;
+      });
+    } else {
+      html += `<p class="recap-empty-note">No non-obvious connections surfaced this session.</p>`;
+    }
+    html += `</div>`;
   }
-  html += `</div>`;
 
-  // Contradictions — only if non-empty
+  // Contradictions
   if (r.contradictions && r.contradictions.length) {
-    html += `<div class="recap-section"><h3>Contradictions</h3><ul>`;
-    r.contradictions.forEach(c => { html += `<li>${esc(c)}</li>`; });
-    html += `</ul></div>`;
+    if (_editingField === 'contradictions') {
+      html += `<div class="recap-section"><h3>Contradictions</h3>
+        <ul id="edit-contradictions">
+          ${r.contradictions.map(c => `<li><input type="text" class="recap-edit-input" value="${esc(c)}"> <button class="recap-edit-del" onclick="this.closest('li').remove()">×</button></li>`).join('')}
+        </ul>
+        <button class="btn btn-ghost btn-sm" onclick="addEditItem('edit-contradictions','li')">+ Add</button>
+        ${editActions()}
+      </div>`;
+    } else {
+      html += `<div class="recap-section">
+        <h3>Contradictions ${editBtn('contradictions')}</h3>
+        <ul>${r.contradictions.map(c => `<li>${esc(c)}</li>`).join('')}</ul>
+      </div>`;
+    }
   }
 
-  // Summary — collapsed
+  // Summary (collapsible unless editing)
   if (r.summary) {
-    html += `<details class="recap-details"><summary>Summary</summary><div class="recap-section">`;
-    r.summary.split('\n\n').forEach(p => { html += `<p>${esc(p)}</p>`; });
-    html += `</div></details>`;
+    if (_editingField === 'summary') {
+      html += `<div class="recap-section">
+        <h3>Summary</h3>
+        <textarea id="edit-summary" class="recap-edit-textarea">${esc(r.summary)}</textarea>
+        ${editActions()}
+      </div>`;
+    } else {
+      html += `<div style="display:flex;align-items:flex-start;gap:8px">
+        <details class="recap-details" style="flex:1">
+          <summary>Summary</summary>
+          <div class="recap-section">
+            ${r.summary.split('\n\n').map(p => `<p>${esc(p)}</p>`).join('')}
+          </div>
+        </details>
+        ${editBtn('summary')}
+      </div>`;
+    }
   }
 
-  // Decisions — collapsed
+  // Decisions (collapsible unless editing)
   if (r.decisions && r.decisions.length) {
-    html += `<details class="recap-details"><summary>Decisions</summary><div class="recap-section"><ul>`;
-    r.decisions.forEach(d => { html += `<li>${esc(d)}</li>`; });
-    html += `</ul></div></details>`;
+    if (_editingField === 'decisions') {
+      html += `<div class="recap-section"><h3>Decisions</h3>
+        <ul id="edit-decisions">
+          ${r.decisions.map(d => `<li><input type="text" class="recap-edit-input" value="${esc(d)}"> <button class="recap-edit-del" onclick="this.closest('li').remove()">×</button></li>`).join('')}
+        </ul>
+        <button class="btn btn-ghost btn-sm" onclick="addEditItem('edit-decisions','li')">+ Add</button>
+        ${editActions()}
+      </div>`;
+    } else {
+      html += `<div style="display:flex;align-items:flex-start;gap:8px">
+        <details class="recap-details" style="flex:1">
+          <summary>Decisions</summary>
+          <div class="recap-section">
+            <ul>${r.decisions.map(d => `<li>${esc(d)}</li>`).join('')}</ul>
+          </div>
+        </details>
+        ${editBtn('decisions')}
+      </div>`;
+    }
   }
 
-  // Open threads — collapsed
+  // Open threads (collapsible unless editing)
   if (r.open_threads && r.open_threads.length) {
-    html += `<details class="recap-details"><summary>Open Threads</summary><div class="recap-section"><ul>`;
-    r.open_threads.forEach(t => { html += `<li>${esc(t)}</li>`; });
-    html += `</ul></div></details>`;
+    if (_editingField === 'open_threads') {
+      html += `<div class="recap-section"><h3>Open Threads</h3>
+        <ul id="edit-open_threads">
+          ${r.open_threads.map(t => `<li><input type="text" class="recap-edit-input" value="${esc(t)}"> <button class="recap-edit-del" onclick="this.closest('li').remove()">×</button></li>`).join('')}
+        </ul>
+        <button class="btn btn-ghost btn-sm" onclick="addEditItem('edit-open_threads','li')">+ Add</button>
+        ${editActions()}
+      </div>`;
+    } else {
+      html += `<div style="display:flex;align-items:flex-start;gap:8px">
+        <details class="recap-details" style="flex:1">
+          <summary>Open Threads</summary>
+          <div class="recap-section">
+            <ul>${r.open_threads.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+          </div>
+        </details>
+        ${editBtn('open_threads')}
+      </div>`;
+    }
   }
 
   return html;
