@@ -46,6 +46,29 @@
   --lime: #00D5D0;
 }
 
+/* ========== LIGHT THEME ========== */
+[data-theme="light"] {
+  --bg:    #EEF2F7;
+  --panel: #FFFFFF;
+  --card:  rgba(0, 88, 171, 0.04);
+  --bdr:   rgba(0, 88, 171, 0.12);
+  --txt:   #2C3E5A;
+  --dim:   #7A8A9E;
+  --bright:#121A38;
+  --green: #0058AB;
+}
+[data-theme="light"] .edge-path { stroke: rgba(0,0,0,0.07); }
+[data-theme="light"] .edge-text { fill: rgba(0,0,0,0.20); }
+[data-theme="light"] .t-area,
+[data-theme="light"] .con-list { scrollbar-color: rgba(0,0,0,0.10) transparent; }
+[data-theme="light"] .ctrl:hover { border-color: rgba(0,0,0,0.18); color: var(--txt); }
+[data-theme="light"] #ctx-menu button:hover { background: rgba(0,0,0,0.05); }
+[data-theme="light"] #mode-badge { background: rgba(238,242,247,0.85); }
+[data-theme="light"] .bigscreen { --bdr: rgba(0,88,171,0.14); }
+[data-theme="light"] .bigscreen .edge-path { stroke: rgba(0,0,0,0.10); }
+[data-theme="light"] .bigscreen .edge-text { fill: rgba(0,0,0,0.28); }
+[data-theme="light"] #conn-dot.ok { box-shadow: 0 0 8px rgba(0,88,171,0.5); }
+
 body {
   background: var(--bg);
   color: var(--txt);
@@ -590,6 +613,16 @@ body {
 <div id="conn-dot"></div>
 
 <script>
+// ─── Theme ───
+(function() {
+  const t = localStorage.getItem('mimir-theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', t);
+  window.addEventListener('storage', e => {
+    if (e.key === 'mimir-theme')
+      document.documentElement.setAttribute('data-theme', e.newValue || 'dark');
+  });
+})();
+
 // ─── Config ───
 const C = {
   interval: 20000,

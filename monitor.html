@@ -724,6 +724,39 @@ select option {
   }
   #graph-mirror { min-height: 200px; }
 }
+
+/* ========== LIGHT THEME ========== */
+[data-theme="light"] {
+  --bg:    #EEF2F7;
+  --panel: #FFFFFF;
+  --card:  rgba(0, 88, 171, 0.04);
+  --bdr:   rgba(0, 88, 171, 0.12);
+  --txt:   #2C3E5A;
+  --dim:   #7A8A9E;
+  --bright:#121A38;
+  --green: #0058AB;
+}
+[data-theme="light"] .btn:hover { border-color: rgba(0,0,0,0.16); }
+[data-theme="light"] .stt-option:hover { border-color: rgba(0,0,0,0.14); }
+[data-theme="light"] .llm-badge.standby { background: rgba(0,88,171,0.04); }
+[data-theme="light"] .gm-edge { stroke: rgba(0,0,0,0.08); }
+[data-theme="light"] #main-scroll,
+[data-theme="light"] #phase-setup { scrollbar-color: rgba(0,0,0,0.10) transparent; }
+
+#theme-toggle {
+  background: transparent;
+  border: 1px solid var(--bdr);
+  border-radius: 4px;
+  color: var(--dim);
+  cursor: pointer;
+  font-family: 'Ubuntu Mono', monospace;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 8px;
+  transition: all .2s;
+  flex-shrink: 0;
+}
+#theme-toggle:hover { border-color: var(--green); color: var(--green); }
 </style>
 </head>
 <body>
@@ -738,6 +771,7 @@ select option {
     <span id="hdr-duration">00:00</span>
     <button id="hdr-end-session">End Session</button>
   </div>
+  <button id="theme-toggle" title="Toggle light/dark mode">☀</button>
 </div>
 
 <!-- ===== DISCONNECT BANNER ===== -->
@@ -877,6 +911,26 @@ select option {
 </div>
 
 <script>
+// ─── Theme ───
+(function() {
+  const t = localStorage.getItem('mimir-theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', t);
+  document.getElementById('theme-toggle').textContent = t === 'light' ? '☾' : '☀';
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('mimir-theme', next);
+    document.getElementById('theme-toggle').textContent = next === 'light' ? '☾' : '☀';
+  });
+  window.addEventListener('storage', e => {
+    if (e.key === 'mimir-theme') {
+      const v = e.newValue || 'dark';
+      document.documentElement.setAttribute('data-theme', v);
+      document.getElementById('theme-toggle').textContent = v === 'light' ? '☾' : '☀';
+    }
+  });
+})();
+
 // ════════════════════════════════════════════
 //  STATE
 // ════════════════════════════════════════════
@@ -1501,7 +1555,8 @@ function drawWaveform(buf) {
   ctx.stroke();
 
   // Center line
-  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  ctx.strokeStyle = document.documentElement.getAttribute('data-theme') === 'light'
+    ? 'rgba(0,0,0,0.07)' : 'rgba(255,255,255,0.03)';
   ctx.beginPath();
   ctx.moveTo(0, mid);
   ctx.lineTo(W, mid);
