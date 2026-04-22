@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <title>Mímir</title>
-  <g fill="none" stroke="#0058AB" stroke-linecap="round" stroke-linejoin="round">
+  <g fill="none" stroke="#1EB8F2" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="32" cy="32" r="28" stroke-width="3"/>
     <line x1="32" y1="20" x2="20" y2="40" stroke-width="2.2"/>
     <line x1="32" y1="20" x2="44" y2="40" stroke-width="2.2"/>
     <line x1="20" y1="40" x2="44" y2="40" stroke-width="2.2"/>
   </g>
-  <g fill="#0058AB">
+  <g fill="#1EB8F2">
     <circle cx="32" cy="20" r="3.6"/>
     <circle cx="20" cy="40" r="3.6"/>
     <circle cx="44" cy="40" r="3.6"/>
