@@ -1020,20 +1020,22 @@ h1 {
   border-top: 1px solid var(--bdr);
   margin: 0.6em 0;
 }
-.qa-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding: 2px 0 6px 30px;
-  margin-top: -4px;
+.qa-bubble--assistant {
+  position: relative;
+  padding-right: 28px;
 }
 .qa-copy-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
   background: none;
   border: 1px solid var(--bdr);
   border-radius: 4px;
   color: var(--dim);
   cursor: pointer;
-  font-size: 11px;
-  padding: 2px 7px;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 4px;
   transition: color 0.15s, border-color 0.15s;
 }
 .qa-copy-btn:hover {
@@ -1404,7 +1406,7 @@ function renderQaHistory() {
     if (msg.role === 'user') {
       return `<div class="qa-bubble qa-bubble--user">${escQa(msg.content)}</div>`;
     }
-    return `<div class="qa-row"><div class="qa-avatar"><img src="/mimir-favicon.svg" alt="Mímir"></div><div class="qa-bubble qa-bubble--assistant">${marked.parse(msg.content)}</div></div><div class="qa-actions"><button class="qa-copy-btn" onclick="copyQaBubble(this)">⎘ Copier</button></div>`;
+    return `<div class="qa-row"><div class="qa-avatar"><img src="/mimir-favicon.svg" alt="Mímir"></div><div class="qa-bubble qa-bubble--assistant">${marked.parse(msg.content)}<button class="qa-copy-btn" onclick="copyQaBubble(this)" title="Copier">⎘</button></div></div>`;
   }).join('');
   container.scrollTop = container.scrollHeight;
 }
@@ -1416,10 +1418,11 @@ function escQa(text) {
 }
 
 function copyQaBubble(btn) {
-  const row = btn.closest('.qa-actions').previousElementSibling;
-  const bubble = row ? row.querySelector('.qa-bubble--assistant') : null;
+  const bubble = btn.closest('.qa-bubble--assistant');
   if (!bubble) return;
-  navigator.clipboard.writeText(bubble.innerText).then(
+  const clone = bubble.cloneNode(true);
+  clone.querySelector('.qa-copy-btn')?.remove();
+  navigator.clipboard.writeText(clone.innerText).then(
     () => toast('Copié'),
     () => toast('Échec de la copie', true)
   );
