@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 import aiohttp
 from log import logger
 
+from log import logger
 import db
 import stt_worker
 from stt_worker import configure_stt, get_stt_config

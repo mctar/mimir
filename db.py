@@ -5,6 +5,7 @@ Uses aiosqlite for async access with WAL mode for concurrent reads.
 
 import json, time
 import aiosqlite
+from log import logger
 
 DB_PATH = "livemind.db"
 _db: aiosqlite.Connection | None = None
@@ -104,6 +105,7 @@ async def init_db(path: str = DB_PATH):
     """)
     await _db.commit()
 
+    logger.info(f"DB initialized: {path}")
     return _db
 
 
@@ -123,6 +125,7 @@ async def create_session(session_id: str, topic: str = "", source: str = "live")
         (session_id, topic, now, source),
     )
     await _db.commit()
+    logger.debug(f"Session created: {session_id} (source={source}, topic={topic!r})")
     return {"id": session_id, "topic": topic, "created_at": now, "source": source}
 
 
@@ -164,6 +167,7 @@ async def store_snapshot(session_id: str, seq_at: int, graph: dict, trigger: str
         (session_id, seq_at, json.dumps(graph), time.time(), trigger),
     )
     await _db.commit()
+    logger.debug(f"Snapshot stored: session={session_id}, seq={seq_at}, trigger={trigger}")
 
 
 async def get_latest_snapshot(session_id: str) -> dict | None:

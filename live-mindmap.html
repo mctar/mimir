@@ -7,34 +7,49 @@
 <link rel="icon" type="image/svg+xml" href="/mimir-favicon.svg">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=IBM+Plex+Mono:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Ubuntu+Mono:wght@400;500&display=swap');
 
 *{margin:0;padding:0;box-sizing:border-box}
 
 :root {
-  --bg: #060610;
-  --panel: #0a0b14;
+  --bg: #080c18;
+  --panel: #0d1124;
   --card: rgba(255,255,255,0.03);
   --bdr: rgba(255,255,255,0.06);
-  --txt: #c8cad4;
-  --dim: #484b5e;
-  --bright: #eeeef2;
-  --green: #34d399;
-  --purple: #a78bfa;
-  --rose: #fb7185;
-  --amber: #fbbf24;
-  --blue: #60a5fa;
-  --cyan: #22d3ee;
-  --teal: #2dd4bf;
-  --orange: #fb923c;
-  --pink: #f0abfc;
-  --lime: #a3e635;
+  --txt: #c8ccd8;
+  --dim: #4a5a74;
+  --bright: #f0f4f8;
+  /* Capgemini Brand */
+  --color-brand-blue: #0058AB;
+  --color-brand-dark: #121A38;
+  --color-brand-light: #1DB8F2;
+  --color-white: #FFFFFF;
+  --color-acc-turquoise: #00D5D0;
+  --color-acc-yellow: #FEB100;
+  --color-acc-orange: #FF816E;
+  --color-acc-lilac: #D4D3F1;
+  --color-acc-teal: #00828E;
+  --color-acc-terracotta: #BE4D00;
+  --color-acc-red: #8F3237;
+  --color-acc-purple: #71609E;
+  --capgemini-gradient: linear-gradient(90deg, #121A38 0%, #0058AB 30%, #1DB8F2 70%, #00D5D0 100%);
+  /* Semantic aliases */
+  --green: #1DB8F2;
+  --purple: #71609E;
+  --rose: #FF816E;
+  --amber: #FEB100;
+  --blue: #0058AB;
+  --cyan: #00D5D0;
+  --teal: #00828E;
+  --orange: #FF816E;
+  --pink: #D4D3F1;
+  --lime: #00D5D0;
 }
 
 body {
   background: var(--bg);
   color: var(--txt);
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Ubuntu', Verdana, sans-serif;
   overflow: hidden;
   height: 100vh;
 }
@@ -52,7 +67,7 @@ body {
   text-align: center;
 }
 .waiting-inner .tag {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 11px; font-weight: 400;
   letter-spacing: 3px; text-transform: uppercase;
   color: var(--green); margin-bottom: 10px;
@@ -63,7 +78,7 @@ body {
   letter-spacing: -0.5px;
 }
 .waiting-inner .wait-msg {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 12px;
   color: var(--dim);
   letter-spacing: 0.5px;
@@ -78,7 +93,7 @@ body {
 }
 @keyframes waitpulse {
   0%, 100% { background: var(--dim); box-shadow: none; }
-  50% { background: var(--green); box-shadow: 0 0 12px rgba(52,211,153,0.5); }
+  50% { background: var(--green); box-shadow: 0 0 12px rgba(29,184,242,0.5); }
 }
 
 /* ========== MAIN LAYOUT ========== */
@@ -126,23 +141,23 @@ body {
 }
 .led.on {
   background: var(--green);
-  box-shadow: 0 0 10px rgba(52,211,153,0.6);
+  box-shadow: 0 0 10px rgba(29,184,242,0.6);
   animation: pulse 3s ease infinite;
 }
 .led.think {
   background: var(--purple);
-  box-shadow: 0 0 10px rgba(167,139,250,0.5);
+  box-shadow: 0 0 10px rgba(113,96,158,0.5);
   animation: pulse .8s ease infinite;
 }
 .led.warn {
   background: var(--amber);
-  box-shadow: 0 0 10px rgba(251,191,36,0.5);
+  box-shadow: 0 0 10px rgba(254,177,0,0.5);
   animation: pulse 1.5s ease infinite;
 }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
 
 #pill-text {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 10px; font-weight: 400;
   letter-spacing: .5px; color: var(--dim);
 }
@@ -150,7 +165,7 @@ body {
 /* Counter */
 #counter {
   position: absolute; bottom: 24px; left: 24px;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 10px; color: var(--dim);
   letter-spacing: 1px;
   z-index: 10;
@@ -165,10 +180,18 @@ body {
 }
 .side-head {
   padding: 22px 22px 14px;
-  border-bottom: 1px solid var(--bdr);
+  border-bottom: none;
+  position: relative;
+}
+.side-head::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--capgemini-gradient);
 }
 .side-head h3 {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 10px; font-weight: 400;
   letter-spacing: 2px; text-transform: uppercase;
   color: var(--dim);
@@ -209,7 +232,7 @@ body {
   scrollbar-color: rgba(255,255,255,0.04) transparent;
 }
 .con-head {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 10px; font-weight: 400;
   letter-spacing: 2px; text-transform: uppercase;
   color: var(--dim); margin-bottom: 10px;
@@ -235,7 +258,7 @@ body {
   border: 1px solid var(--bdr);
   border-radius: 6px;
   color: var(--dim);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 10px; font-weight: 400;
   letter-spacing: 1px; text-transform: uppercase;
   cursor: pointer; transition: all .2s;
@@ -258,7 +281,7 @@ body {
   padding: 8px 14px;
   background: none; border: none;
   color: var(--txt);
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 11px; font-weight: 400;
   text-align: left; cursor: pointer;
   border-radius: 4px;
@@ -293,7 +316,7 @@ body {
   to { stroke-dashoffset: 0; }
 }
 .edge-text {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 8px; font-weight: 300;
   fill: rgba(255,255,255,0.12);
   text-anchor: middle;
@@ -330,7 +353,7 @@ body {
 }
 
 .n-label {
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Ubuntu', Verdana, sans-serif;
   font-weight: 500;
   font-size: 11px;
   fill: var(--bright);
@@ -339,7 +362,7 @@ body {
   letter-spacing: 0.2px;
 }
 .n-cat {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-weight: 300;
   font-size: 8px;
   fill: var(--dim);
@@ -420,13 +443,13 @@ body {
 
 /* ========== VERDIGRIS STYLE (single-ink discipline, ?style=verdigris) ========== */
 .verdigris {
-  --bg: #060E0B;
-  --mimir-primary:   #0F6E56;
-  --mimir-bright:    #5DCAA5;
-  --mimir-brightest: #9FE1CB;
-  --mimir-text-dim:  #3A7A64;
+  --bg: #080c18;
+  --mimir-primary:   #0058AB;
+  --mimir-bright:    #1DB8F2;
+  --mimir-brightest: #7DD3F7;
+  --mimir-text-dim:  #1e4a7a;
 }
-.verdigris.bigscreen { --bg: #060E0B; }
+.verdigris.bigscreen { --bg: #080c18; }
 .verdigris #canvas { background: var(--bg); }
 .verdigris .atmo { display: none; }
 
@@ -434,7 +457,7 @@ body {
   stroke: var(--mimir-primary);
 }
 .verdigris .edge-text {
-  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-family: ui-monospace, 'Ubuntu Mono', monospace;
   fill: var(--mimir-text-dim);
   letter-spacing: 0.08em;
 }
@@ -464,13 +487,13 @@ body {
   filter: none;
 }
 .verdigris .n-label {
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: 'Ubuntu', Verdana, sans-serif;
   font-weight: 400;
   fill: var(--mimir-brightest);
   letter-spacing: 0;
 }
 .verdigris .n-cat {
-  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-family: ui-monospace, 'Ubuntu Mono', monospace;
   fill: var(--mimir-text-dim);
   letter-spacing: 0.08em;
 }
@@ -486,7 +509,7 @@ body {
 /* Big screen mode indicator */
 #mode-badge {
   position: absolute; top: 24px; right: 24px;
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Ubuntu Mono', monospace;
   font-size: 10px; font-weight: 400;
   letter-spacing: 1.5px; text-transform: uppercase;
   color: var(--dim);
@@ -515,11 +538,11 @@ body {
 }
 #conn-dot.ok {
   background: var(--green);
-  box-shadow: 0 0 8px rgba(52,211,153,0.5);
+  box-shadow: 0 0 8px rgba(29,184,242,0.5);
 }
 #conn-dot.err {
   background: var(--rose);
-  box-shadow: 0 0 8px rgba(251,113,133,0.5);
+  box-shadow: 0 0 8px rgba(255,129,110,0.5);
 }
 </style>
 </head>
@@ -574,8 +597,8 @@ const C = {
   maxN: 30,
   model: 'claude-sonnet-4-20250514',
   colors: [
-    '#34d399','#a78bfa','#fb7185','#fbbf24','#60a5fa',
-    '#22d3ee','#fb923c','#f0abfc','#2dd4bf','#a3e635'
+    '#1DB8F2','#71609E','#FF816E','#FEB100','#0058AB',
+    '#00D5D0','#00828E','#D4D3F1','#BE4D00','#8F3237'
   ],
 };
 
@@ -1239,21 +1262,21 @@ const BS = {
 
 // ─── Verdigris style (scale-aware single-ink, gated by ?style=verdigris) ───
 const MIMIR_TOKENS = {
-  primary:   '#0F6E56',
-  bright:    '#5DCAA5',
-  brightest: '#9FE1CB',
-  textDim:   '#3A7A64',
-  bg:        '#060E0B',
+  primary:   '#0058AB',   // Capgemini Blue — n-outer stroke, edges
+  bright:    '#1DB8F2',   // Light Blue — n-inner stroke
+  brightest: '#7DD3F7',   // Light Blue clair — labels
+  textDim:   '#1e4a7a',   // muted navy — category text
+  bg:        '#080c18',   // dark navy — n-aura mask
 };
 const DOT_COLORS = {
-  MEMORY:      '#A78BFA',
-  LOGISTICS:   '#FCD34D',
-  PEOPLE:      '#FB7185',
-  TECHNOLOGY:  '#22D3EE',
-  CULTURE:     '#F97316',
-  POLITICS:    '#F87171',
-  GEOPOLITICS: '#60A5FA',
-  UPDATES:     '#94A3B8',
+  MEMORY:      '#71609E',
+  LOGISTICS:   '#FEB100',
+  PEOPLE:      '#FF816E',
+  TECHNOLOGY:  '#1DB8F2',
+  CULTURE:     '#BE4D00',
+  POLITICS:    '#8F3237',
+  GEOPOLITICS: '#0058AB',
+  UPDATES:     '#5a6a80',
 };
 function nodeTokens(R) {
   const s = R / 24;

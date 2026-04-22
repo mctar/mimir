@@ -14,8 +14,9 @@ Prerequisites:
     pip install playwright && playwright install chromium
 """
 
-import argparse, asyncio, json, logging, os, re, subprocess, sys, tempfile
+import argparse, asyncio, json, os, re, subprocess, sys, tempfile
 
+from log import logger
 import aiohttp
 import db
 
@@ -90,20 +91,20 @@ async def export_pdf(session_id: str, output: str, db_path: str = "livemind.db")
         sessions = await db.list_sessions(archived=True)
         session = next((s for s in sessions if s["id"] == session_id), None)
     if not session:
-        print(f"Session '{session_id}' not found.", file=sys.stderr)
+        logger.error(f"Session '{session_id}' not found.")
         return
 
     # Get snapshots
     snapshots = await db.get_session_snapshots(session_id)
     if not snapshots:
-        print(f"No snapshots for session '{session_id}'.", file=sys.stderr)
+        logger.error(f"No snapshots for session '{session_id}'.")
         return
 
     peak = find_peak_snapshot(snapshots)
     nodes = peak["graph"].get("nodes", {})
     active_count = sum(1 for n in nodes.values() if n.get("state") == "active")
     edge_count = len(peak["graph"].get("edges", []))
-    print(f"Peak snapshot: {active_count} nodes, {edge_count} edges")
+    logger.info(f"Peak snapshot: {active_count} nodes, {edge_count} edges")
 
     # Get summary
     recap_data = await db.get_recap(session_id)
@@ -155,7 +156,7 @@ async def export_pdf(session_id: str, output: str, db_path: str = "livemind.db")
         await browser.close()
 
     size_kb = os.path.getsize(output) / 1024
-    print(f"PDF saved: {output} ({size_kb:.0f} KB)")
+    logger.info(f"PDF saved: {output} ({size_kb:.0f} KB)")
 
 
 # ─── Video Export ───
@@ -180,11 +181,11 @@ async def export_video(
 
     snapshots = await db.get_session_snapshots(session_id)
     if not snapshots or len(snapshots) < 2:
-        print(f"Not enough snapshots for video (need >= 2, got {len(snapshots or [])}).", file=sys.stderr)
+        logger.error(f"Not enough snapshots for video (need >= 2, got {len(snapshots or [])}).")
         return
 
-    print(f"Recording {len(snapshots)} snapshots → {output}")
-    print(f"  Speed: {speed}x, max hold: {max_hold}s, settle: {settle_time}s")
+    logger.info(f"Recording {len(snapshots)} snapshots → {output}")
+    logger.info(f"Speed: {speed}x, max hold: {max_hold}s, settle: {settle_time}s")
 
     tmpdir = tempfile.mkdtemp(prefix="mimir-export-")
 
@@ -235,7 +236,7 @@ async def export_video(
             await context.close()
             await browser.close()
 
-        print(f"\n  Converting to mp4...")
+        logger.info("Converting to mp4...")
 
         # Convert WebM to MP4 with ffmpeg
         ffmpeg_cmd = [
@@ -250,12 +251,12 @@ async def export_video(
         ]
         result = subprocess.run(ffmpeg_cmd, capture_output=True)
         if result.returncode != 0:
-            print(f"  ffmpeg error: {result.stderr.decode()}", file=sys.stderr)
+            logger.error(f"ffmpeg error: {result.stderr.decode()}")
             return
 
         size = os.path.getsize(output)
         size_str = f"{size / 1024 / 1024:.1f} MB" if size > 1024 * 1024 else f"{size / 1024:.0f} KB"
-        print(f"  Video saved: {output} ({size_str})")
+        logger.info(f"Video saved: {output} ({size_str})")
 
     finally:
         import shutil
