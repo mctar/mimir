@@ -1010,9 +1010,10 @@ function handleMessage(msg) {
         addSegment(s.timestamp || s.ts || null, s.text || '', false);
       });
       transcriptPanel.scrollTop = transcriptPanel.scrollHeight;
-      // Session id
-      if (msg.snapshot && msg.snapshot.session_id) {
-        sessionId = msg.snapshot.session_id;
+      // Session id (fallback to top-level session_id when no snapshot yet)
+      const sid = (msg.snapshot && msg.snapshot.session_id) || msg.session_id;
+      if (sid) {
+        sessionId = sid;
         sessionLabel.textContent = `Session ${sessionId.slice(0, 8)}`;
       }
       break;
