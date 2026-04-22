@@ -1177,6 +1177,7 @@ function renderDetail() {
 
   renderRecap();
   renderTranscript();
+  initQaTab();   // reset Q&A history and load corpus badge
   // Reset to recap tab
   switchTab('recap');
 }
@@ -1191,6 +1192,108 @@ function switchTab(tab) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + tab));
   if (tab === 'mindmap') renderMindMap();
+}
+
+// ─── Q&A Tab ─────────────────────────────────────────────────────────────────
+let _qaHistory = [];   // [{role: 'user'|'assistant', text: string}]
+let _qaLoading = false;
+let _qaBadgeReady = false;
+
+async function initQaTab() {
+  // Reset history for the newly opened session
+  _qaHistory = [];
+  renderQaHistory();
+  // Load corpus badge only once per page session (corpus is global)
+  if (!_qaBadgeReady) {
+    await loadQaCorpusBadge();
+    _qaBadgeReady = true;
+  }
+}
+
+async function loadQaCorpusBadge() {
+  const badge = document.getElementById('qa-corpus-badge');
+  try {
+    const resp = await fetch('/v1/corpus');
+    if (!resp.ok) throw new Error('fetch failed');
+    const data = await resp.json();
+    const active = (data.docs || []).filter(d => d.active);
+    if (active.length > 0) {
+      badge.innerHTML = `<span class="qa-badge-dot"></span>${active.length} document${active.length > 1 ? 's' : ''} corpus actif${active.length > 1 ? 's' : ''}`;
+      badge.classList.add('qa-badge--active');
+    } else {
+      badge.innerHTML = `<span class="qa-badge-dot"></span>Aucun document corpus actif`;
+      badge.classList.remove('qa-badge--active');
+    }
+  } catch {
+    badge.innerHTML = `<span class="qa-badge-dot"></span>Corpus non disponible`;
+    badge.classList.remove('qa-badge--active');
+  }
+}
+
+function renderQaHistory() {
+  const container = document.getElementById('qa-messages');
+  if (!container) return;
+  if (_qaHistory.length === 0) {
+    container.innerHTML = '<div class="qa-empty">Posez une question sur cette session ou les documents du corpus.</div>';
+    return;
+  }
+  container.innerHTML = _qaHistory.map(msg => {
+    if (msg.role === 'user') {
+      return `<div class="qa-bubble qa-bubble--user">${escQa(msg.text)}</div>`;
+    }
+    return `<div class="qa-row"><div class="qa-avatar">M</div><div class="qa-bubble qa-bubble--assistant">${escQa(msg.text)}</div></div>`;
+  }).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+function escQa(text) {
+  const d = document.createElement('div');
+  d.appendChild(document.createTextNode(text));
+  return d.innerHTML;
+}
+
+async function sendQaQuestion() {
+  if (_qaLoading || !current) return;
+  const input = document.getElementById('qa-input');
+  const question = input.value.trim();
+  if (!question) return;
+
+  const sessionId = current.session.id;
+  input.value = '';
+  input.style.height = 'auto';
+
+  _qaHistory.push({ role: 'user', text: question });
+  _qaLoading = true;
+  document.getElementById('qa-send').disabled = true;
+  input.disabled = true;
+
+  // Render user bubble immediately, then add a loading indicator
+  renderQaHistory();
+  const container = document.getElementById('qa-messages');
+  const loadingRow = document.createElement('div');
+  loadingRow.className = 'qa-row';
+  loadingRow.id = 'qa-loading-row';
+  loadingRow.innerHTML = '<div class="qa-avatar"><span class="spinner" style="width:12px;height:12px;border-width:2px;"></span></div><div class="qa-bubble qa-bubble--assistant" style="color:var(--dim);">…</div>';
+  container.appendChild(loadingRow);
+  container.scrollTop = container.scrollHeight;
+
+  try {
+    const resp = await fetch(`/v1/sessions/${sessionId}/qa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question }),
+    });
+    const data = await resp.json();
+    _qaHistory.push({ role: 'assistant', text: data.error ? `Erreur : ${data.error}` : (data.answer || '') });
+  } catch {
+    _qaHistory.push({ role: 'assistant', text: "Impossible d'obtenir une réponse." });
+  } finally {
+    _qaLoading = false;
+    document.getElementById('qa-send').disabled = false;
+    input.disabled = false;
+    renderQaHistory();
+    input.focus();
+  }
 }
 
 // ─── Recap ───
