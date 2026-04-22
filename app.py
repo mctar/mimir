@@ -940,6 +940,18 @@ Rules:
             return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
 
 
+@app.put("/v1/sessions/{session_id}/recap")
+async def update_recap(session_id: str, request: Request):
+    """Save a manually edited recap (overwrites existing)."""
+    body = await request.json()
+    recap = body.get("recap")
+    if not isinstance(recap, dict):
+        return JSONResponse({"error": "recap must be an object"}, status_code=400)
+    recap["schema_version"] = recap.get("schema_version", 2)
+    await db.store_recap(session_id, recap, model="manual")
+    return JSONResponse({"recap": recap, "model": "manual", "created_at": time.time()})
+
+
 # ─── Transcript cleaning ───
 
 @app.get("/v1/sessions/{session_id}/clean-transcript/status")
