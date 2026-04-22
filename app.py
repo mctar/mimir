@@ -652,8 +652,12 @@ async def session_qa(session_id: str, request: Request):
     if not question:
         return JSONResponse({"error": "No question"}, status_code=400)
 
+    session_meta = await db.get_session(session_id)
+    if session_meta is None:
+        return JSONResponse({"error": f"Session {session_id} not found"}, status_code=404)
+
     segments = await db.get_session_transcript(session_id)
-    transcript = " ".join(s["text"] for s in segments if s.get("text"))[-16000:]
+    transcript = " ".join(seg.get("cleaned_text") or seg["text"] for seg in segments)[-16000:]
 
     corpus_passages: list[dict] = []
     if db._db is not None:
