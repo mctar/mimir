@@ -735,6 +735,7 @@ async def session_qa(session_id: str, request: Request):
         return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
     question = (body.get("question") or "").strip()
     history = body.get("history", [])  # [{role, content}, ...]
+    corpus_ids = [int(i) for i in body.get("corpus_ids", []) if str(i).isdigit()]
     if not question:
         return JSONResponse({"error": "No question"}, status_code=400)
 
@@ -745,15 +746,33 @@ async def session_qa(session_id: str, request: Request):
     segments = await db.get_session_transcript(session_id)
     transcript = " ".join(seg.get("cleaned_text") or seg["text"] for seg in segments)[-16000:]
 
+    corpus_text = ""
+    if corpus_ids and db._db is not None:
+        docs = await corpus_module.get_docs_by_ids(db._db, corpus_ids)
+        if docs:
+            parts = [f"[{d['title']}]\n{d['content']}" for d in docs]
+            corpus_text = "\n\n".join(parts)
+            if len(corpus_text) > 80_000:
+                corpus_text = corpus_text[:80_000]
+                logger.warning("Q&A: corpus tronqué à 80 000 chars")
+
     system = (
         "Tu es un assistant d'analyse de session. "
-        "Réponds de façon concise aux questions basées uniquement sur le transcript fourni. "
-        "Si l'information n'est pas dans le transcript, dis-le explicitement. "
-        "Utilise la même langue que le transcript (FR ou EN)."
+        "Réponds de façon concise aux questions basées sur le transcript"
+        + (" et les documents de référence fournis." if corpus_text else " fourni.")
+        + " Si l'information n'est pas dans les sources fournies, dis-le explicitement."
+        " Utilise la même langue que le transcript (FR ou EN)."
     )
-    messages = [
+    messages: list[dict] = [
         {"role": "user", "content": f"Voici le transcript de la session :\n\n{transcript}"},
         {"role": "assistant", "content": "Compris, je vais répondre à vos questions sur ce transcript."},
+    ]
+    if corpus_text:
+        messages += [
+            {"role": "user", "content": f"Voici les documents de référence :\n\n{corpus_text}"},
+            {"role": "assistant", "content": "Documents de référence pris en compte."},
+        ]
+    messages += [
         *history,
         {"role": "user", "content": question},
     ]

@@ -83,6 +83,19 @@ async def delete_doc(db: aiosqlite.Connection, doc_id: int):
     _invalidate_cache()
 
 
+async def get_docs_by_ids(db: aiosqlite.Connection, ids: list[int]) -> list[dict]:
+    """Return title + full content for the given IDs (active docs only)."""
+    if not ids:
+        return []
+    placeholders = ",".join("?" * len(ids))
+    async with db.execute(
+        f"SELECT id, title, content FROM corpus_docs WHERE id IN ({placeholders}) AND active=1",
+        ids,
+    ) as cur:
+        rows = await cur.fetchall()
+    return [{"id": r[0], "title": r[1], "content": r[2]} for r in rows]
+
+
 # ─── Search ────────────────────────────────────────────────────────────────
 
 def search_corpus(query_embedding: np.ndarray, corpus: list[dict], k: int = 5) -> list[dict]:

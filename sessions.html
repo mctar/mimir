@@ -1064,6 +1064,50 @@ h1 {
   opacity: 1;
   transform: translateY(0);
 }
+/* ─── Q&A Corpus Panel ──────────────────────────────────────── */
+.qa-corpus-panel {
+  border: 1px solid var(--bdr);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.qa-corpus-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: var(--dim);
+  background: var(--card);
+  transition: background .15s;
+}
+.qa-corpus-toggle:hover { background: var(--panel); color: var(--txt); }
+.qa-corpus-chevron { font-size: 10px; transition: transform .2s; }
+.qa-corpus-panel.open .qa-corpus-chevron { transform: rotate(90deg); }
+.qa-corpus-list {
+  padding: 6px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.qa-corpus-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--txt);
+  padding: 3px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background .1s;
+}
+.qa-corpus-item:hover { background: var(--card); }
+.qa-corpus-item.excluded { color: var(--dim); text-decoration: line-through; }
+.qa-corpus-item input[type="checkbox"] { accent-color: var(--color-brand-blue); cursor: pointer; }
+.qa-corpus-empty { font-size: 12px; color: var(--dim); padding: 4px 4px 2px; font-style: italic; }
+
 .qa-input-bar {
   display: flex;
   gap: 8px;
@@ -1239,6 +1283,13 @@ h1 {
   <!-- Q&A Tab -->
   <div id="tab-qa" class="tab-panel">
     <div class="qa-panel">
+      <div id="qa-corpus-panel" class="qa-corpus-panel" style="display:none;">
+        <div class="qa-corpus-toggle" onclick="toggleQaCorpusPanel()">
+          <span id="qa-corpus-badge">Corpus documentaire</span>
+          <span class="qa-corpus-chevron" id="qa-corpus-chevron">&#9658;</span>
+        </div>
+        <div id="qa-corpus-list" class="qa-corpus-list" style="display:none;"></div>
+      </div>
       <div class="qa-messages" id="qa-messages">
         <div class="qa-empty">Posez une question sur cette session.</div>
       </div>
@@ -1411,10 +1462,77 @@ function switchTab(tab) {
 // ─── Q&A Tab ─────────────────────────────────────────────────────────────────
 let _qaHistory = [];   // [{role: 'user'|'assistant', content: string}]
 let _qaLoading = false;
+let _qaAllDocs = [];      // [{id, title, source, active}, ...] — chunks bruts
+let _qaDocsBySource = new Map(); // source → {label, ids[]}
+let _qaExcludedSources = new Set(
+  JSON.parse(localStorage.getItem('qa_corpus_excluded_sources') || '[]')
+);
 
 function initQaTab() {
   _qaHistory = [];
   renderQaHistory();
+  loadQaCorpus();
+}
+
+async function loadQaCorpus() {
+  try {
+    const res = await fetch('/v1/corpus');
+    if (!res.ok) return;
+    const data = await res.json();
+    _qaAllDocs = (data.docs || []).filter(d => d.active);
+    // Grouper les chunks par source (nom de fichier)
+    _qaDocsBySource = new Map();
+    for (const d of _qaAllDocs) {
+      const src = d.source || d.title;
+      if (!_qaDocsBySource.has(src)) {
+        // Nettoyage du nom : supprimer extension, remplacer _ par espaces
+        const label = src.replace(/\.[^.]+$/, '').replace(/_/g, ' ');
+        _qaDocsBySource.set(src, { label, ids: [] });
+      }
+      _qaDocsBySource.get(src).ids.push(d.id);
+    }
+    renderQaCorpusList();
+  } catch { /* corpus optionnel */ }
+}
+
+function renderQaCorpusList() {
+  const panel = document.getElementById('qa-corpus-panel');
+  const list = document.getElementById('qa-corpus-list');
+  const badge = document.getElementById('qa-corpus-badge');
+  if (!panel || !list || !badge) return;
+
+  if (_qaDocsBySource.size === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+
+  const total = _qaDocsBySource.size;
+  const includedCount = [..._qaDocsBySource.keys()].filter(s => !_qaExcludedSources.has(s)).length;
+  badge.textContent = `${includedCount} / ${total} document(s) inclus`;
+
+  list.innerHTML = [..._qaDocsBySource.entries()].map(([src, doc]) => {
+    const excluded = _qaExcludedSources.has(src);
+    return `<label class="qa-corpus-item${excluded ? ' excluded' : ''}">
+      <input type="checkbox" ${excluded ? '' : 'checked'} onchange="toggleQaDoc(${JSON.stringify(src)}, this.checked)">
+      ${escQa(doc.label)}
+    </label>`;
+  }).join('');
+}
+
+function toggleQaDoc(src, included) {
+  if (included) _qaExcludedSources.delete(src);
+  else _qaExcludedSources.add(src);
+  localStorage.setItem('qa_corpus_excluded_sources', JSON.stringify([..._qaExcludedSources]));
+  renderQaCorpusList();
+}
+
+function toggleQaCorpusPanel() {
+  const panel = document.getElementById('qa-corpus-panel');
+  const list = document.getElementById('qa-corpus-list');
+  if (!panel || !list) return;
+  const isOpen = panel.classList.toggle('open');
+  list.style.display = isOpen ? '' : 'none';
 }
 
 function renderQaHistory() {
@@ -1481,7 +1599,14 @@ async function sendQaQuestion() {
     const resp = await fetch(`/v1/sessions/${sessionId}/qa`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, history: _qaHistory.slice(0, -1), stream: true }),
+      body: JSON.stringify({
+        question,
+        history: _qaHistory.slice(0, -1),
+        stream: true,
+        corpus_ids: [..._qaDocsBySource.entries()]
+          .filter(([src]) => !_qaExcludedSources.has(src))
+          .flatMap(([, doc]) => doc.ids),
+      }),
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
