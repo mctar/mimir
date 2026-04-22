@@ -13,13 +13,11 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 import aiohttp
 from log import logger
-
-from log import logger
 import db
 import stt_worker
 from stt_worker import configure_stt, get_stt_config
 from reconciler import GraphReconciler
-import routes_facilitator
+import corpus as corpus_module
 
 # ─── Load .env ───
 _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -290,6 +288,63 @@ def _next_seq() -> int:
         return _seq_counter
 
 
+# ─── Q&A LLM helpers ─────────────────────────────────────────────────────────
+
+async def _qa_llm_call_chain(system: str, user: str, chain: list[dict],
+                             max_tokens: int = 2048, timeout_secs: int = 60) -> str:
+    """Walk the chain and return the first successful text response."""
+    for tier in chain:
+        try:
+            return await _qa_llm_call(tier, system, user,
+                                      max_tokens=max_tokens, timeout_secs=timeout_secs)
+        except Exception as e:
+            logger.warning(f"[qa] LLM tier {tier.get('provider')}/{tier.get('model')} failed: {e}")
+            continue
+    return "LLM indisponible."
+
+
+async def _qa_llm_call(tier: dict, system: str, user: str,
+                       max_tokens: int = 2048, timeout_secs: int = 60) -> str:
+    """Single-tier LLM call for simple chat completions (no graph parsing)."""
+    provider = tier["provider"]
+    model = tier["model"]
+    timeout = aiohttp.ClientTimeout(total=timeout_secs)
+
+    if provider == "anthropic":
+        url = f"{ANTHROPIC_BASE_URL}/v1/messages"
+        headers = {"anthropic-version": "2023-06-01", "content-type": "application/json"}
+        if ANTHROPIC_AUTH_TOKEN:
+            headers["Authorization"] = f"Bearer {ANTHROPIC_AUTH_TOKEN}"
+        else:
+            headers["x-api-key"] = ANTHROPIC_API_KEY
+        body = {"model": model, "max_tokens": max_tokens, "system": system,
+                "messages": [{"role": "user", "content": user}]}
+        async with aiohttp.ClientSession() as s:
+            async with s.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
+                if r.status != 200:
+                    raise RuntimeError(f"Anthropic API error {r.status}: {await r.text()}")
+                data = await r.json()
+                return data["content"][0]["text"]
+
+    if provider == "hugin":
+        url = f"{HUGIN_BASE_URL}/v1/chat/completions"
+        headers = _hugin_headers()
+    else:  # gemini
+        url = f"{GEMINI_BASE_URL}/chat/completions"
+        headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
+
+    body = {
+        "model": model, "max_tokens": max_tokens,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+    }
+    async with aiohttp.ClientSession() as s:
+        async with s.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
+            if r.status != 200:
+                raise RuntimeError(f"{provider} API error {r.status}: {await r.text()}")
+            data = await r.json()
+            return data["choices"][0]["message"]["content"]
+
+
 # ─── Lifespan ───
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -306,16 +361,8 @@ async def lifespan(app: FastAPI):
             except Exception:
                 pass
 
-    routes_facilitator.configure(
-        get_session_id=lambda: _current_session_id,
-        broadcast=_ws_broadcast,
-        get_llm_chain=lambda: list(_llm_chain),
-        get_db_conn=lambda: db._db,
-    )
-
     asyncio.create_task(broadcast_loop())
     asyncio.create_task(snapshot_loop())
-    asyncio.create_task(_synthesis_loop())
     logger.info("Server ready — audio arrives from browser via WebSocket")
     logger.info(f"Main:     http://0.0.0.0:{WS_PORT}/")
     logger.info(f"Monitor:  http://0.0.0.0:{WS_PORT}/monitor")
@@ -325,7 +372,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
-app.include_router(routes_facilitator.router)
 WS_PORT = 8765
 
 
@@ -585,6 +631,73 @@ async def get_session_snapshots_endpoint(session_id: str):
     })
 
 
+# ─── Q&A ─────────────────────────────────────────────────────────────────────
+
+@app.post("/v1/sessions/{session_id}/qa")
+async def session_qa(session_id: str, request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+    question = body.get("question", "").strip()
+    if not question:
+        return JSONResponse({"error": "No question"}, status_code=400)
+
+    session_meta = await db.get_session(session_id)
+    if session_meta is None:
+        return JSONResponse({"error": f"Session {session_id} not found"}, status_code=404)
+
+    segments = await db.get_session_transcript(session_id)
+    transcript = " ".join(seg.get("cleaned_text") or seg["text"] for seg in segments)[-16000:]
+
+    corpus_passages: list[dict] = []
+    if db._db is not None:
+        loaded = await corpus_module.load_corpus(db._db)
+        if loaded:
+            emb = await corpus_module.embed_text(question)
+            if emb is not None:
+                corpus_passages = corpus_module.search_corpus(emb, loaded, k=3)
+
+    user_prompt = corpus_module.build_qa_user_prompt(transcript, question, corpus_passages)
+    with _llm_chain_lock:
+        chain = list(_llm_chain)
+    answer = await _qa_llm_call_chain(corpus_module.QA_SYSTEM_PROMPT, user_prompt, chain)
+    return JSONResponse({"answer": answer})
+
+
+# ─── Corpus admin ─────────────────────────────────────────────────────────────
+
+@app.get("/corpus-admin", response_class=FileResponse)
+async def corpus_admin_view():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "corpus.html"))
+
+
+@app.get("/v1/corpus")
+async def list_corpus():
+    if db._db is None:
+        return JSONResponse({"docs": []})
+    docs = await corpus_module.list_docs(db._db)
+    return JSONResponse({"docs": docs})
+
+
+@app.patch("/v1/corpus/{doc_id}")
+async def toggle_corpus_doc(doc_id: int, request: Request):
+    body = await request.json()
+    active = bool(body.get("active", True))
+    if db._db is None:
+        return JSONResponse({"error": "no db"}, status_code=500)
+    await corpus_module.set_doc_active(db._db, doc_id, active)
+    return JSONResponse({"ok": True})
+
+
+@app.delete("/v1/corpus/{doc_id}")
+async def delete_corpus_doc(doc_id: int):
+    if db._db is None:
+        return JSONResponse({"error": "no db"}, status_code=500)
+    await corpus_module.delete_doc(db._db, doc_id)
+    return JSONResponse({"ok": True})
+
+
 _export_tasks: dict[str, dict] = {}  # session_id -> {task, status, path, error}
 
 @app.post("/v1/sessions/{session_id}/export/{fmt}")
@@ -779,49 +892,18 @@ Rules:
 
     user_prompt = f"SESSION TRANSCRIPT:\n\n{transcript_for_recap}{graph_context}\n\nGenerate the recap."
 
-    model = "gemma4:31b"
-    ollama_body = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "stream": False,
-        "think": False,
-        "format": "json",
-        "options": {
-            "temperature": 0,
-            "num_predict": 4096,
-        },
-    }
-
-    # Retry once on parse failure with stricter reminder
+    # Walk the LLM chain (hugin → gemini → anthropic) with JSON-parse retry
     max_attempts = 2
-    last_error = None
-
+    raw_text = ""
     for attempt in range(max_attempts):
+        prompt = user_prompt
+        if attempt > 0:
+            prompt += "\n\nIMPORTANT: Return ONLY the raw JSON object. No markdown, no explanation, no code fences."
         try:
-            if attempt > 0:
-                # Add stricter reminder on retry
-                ollama_body["messages"] = [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt + "\n\nIMPORTANT: Return ONLY the raw JSON object. No markdown, no explanation, no code fences."},
-                ]
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{HUGIN_BASE_URL}/api/chat",
-                    headers=_hugin_headers(),
-                    json=ollama_body,
-                    timeout=aiohttp.ClientTimeout(total=180),
-                    ssl=False,
-                ) as resp:
-                    data = await resp.json()
-                    if resp.status != 200:
-                        err = data.get("error", "") or str(data)
-                        return JSONResponse({"error": f"Ollama: {err}"}, status_code=502)
-
-            raw_text = data.get("message", {}).get("content", "")
+            raw_text = await _qa_llm_call_chain(
+                system_prompt, prompt, _llm_chain,
+                max_tokens=4096, timeout_secs=180,
+            )
             # Strip markdown code fences if present
             cleaned = raw_text.strip()
             if cleaned.startswith("```"):
@@ -829,33 +911,31 @@ Rules:
             if cleaned.endswith("```"):
                 cleaned = cleaned[:-3]
             recap = json.loads(cleaned.strip())
-
-            # Add metadata
             recap["language"] = session_lang
             recap["schema_version"] = 2
             recap["transcript_stats"] = stats
-
-            await db.store_recap(session_id, recap, model)
-            log_activity("recap", session_id, "completed", f"{len(segments)} segments, model={model}")
-            return JSONResponse({"recap": recap, "model": model, "created_at": time.time()})
-
+            served_model = _llm_chain[0]["model"] if _llm_chain else "unknown"
+            await db.store_recap(session_id, recap, served_model)
+            log_activity("recap", session_id, "completed",
+                         f"{len(segments)} segments, model={served_model}")
+            return JSONResponse({"recap": recap, "model": served_model, "created_at": time.time()})
         except json.JSONDecodeError as e:
-            last_error = e
-            logger.error(f"Recap parse attempt {attempt + 1} failed: {e}")
+            logger.error(f"Recap JSON parse attempt {attempt + 1} failed: {e}")
             if attempt < max_attempts - 1:
                 continue
-            # Final failure — store error state
             error_recap = {
                 "schema_version": 2,
                 "language": session_lang,
-                "error": f"Failed to parse LLM response after {max_attempts} attempts: {str(last_error)}",
+                "error": f"Failed to parse LLM response after {max_attempts} attempts: {e}",
                 "raw_response": raw_text[:2000],
                 "transcript_stats": stats,
             }
-            await db.store_recap(session_id, error_recap, model)
-            log_activity("recap", session_id, "error", str(last_error))
-            return JSONResponse({"error": f"Failed to parse LLM response: {last_error}"}, status_code=502)
+            await db.store_recap(session_id, error_recap, "unknown")
+            log_activity("recap", session_id, "error", str(e))
+            return JSONResponse({"error": f"Failed to parse LLM response: {e}"}, status_code=502)
         except Exception as e:
+            logger.error(f"Recap generation failed for session {session_id}: "
+                         f"{type(e).__name__}: {e}")
             log_activity("recap", session_id, "error", str(e))
             return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
 
@@ -2166,17 +2246,6 @@ async def broadcast_loop():
         except queue.Empty:
             pass
         await asyncio.sleep(0.05)
-
-
-async def _synthesis_loop():
-    """Auto-generate synthesis every 5 minutes when a session is active."""
-    while True:
-        await asyncio.sleep(300)
-        if _current_session_id:
-            try:
-                await routes_facilitator._run_synthesis()
-            except Exception as e:
-                logger.error(f"[synthesis_loop] error: {e}")
 
 
 async def snapshot_loop():
