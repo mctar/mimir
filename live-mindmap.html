@@ -917,7 +917,7 @@ Return: {"nodes":[...],"edges":[...],"summary":"<2-3 sentence summary of all key
     : (G.txt.length > 0 ? `INITIAL TRANSCRIPT:\n"${G.txt.slice(0, 3000)}"` : '');
   const usr = `CURRENT GRAPH:\n${JSON.stringify(curGraph)}\n\nNEW SEGMENT:\n"${segment}"\n\n${contextBlock}\n\nReturn the updated graph.`;
 
-  const body = { model: C.model, max_tokens: 2000, system: sys, messages: [{role:'user', content:usr}] };
+  const body = { model: C.model, max_tokens: 3000, system: sys, messages: [{role:'user', content:usr}] };
   const MAX_RETRIES = 2;
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {

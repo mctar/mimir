@@ -2133,7 +2133,7 @@ _SLIDES_INJECT = """
 
 Additionally, return a "slide_updates" array in the same JSON object.
 For each slide whose topic is addressed in the CURRENT transcript excerpt, provide:
-  {"slide_id": "...", "bullets": ["...", "..."], "key_quote": "...or null"}
+  {"slide_id": "...", "bullets": ["...", "..."], "key_quote": "verbatim quote or null if none"}
 Slide IDs and their questions:
   pos_what_sell="What we sell?", pos_why_now="Why now?",
   pos_why_us="Why are we well positioned?", pos_to_whom="To Whom?",
