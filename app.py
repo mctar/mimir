@@ -5,13 +5,14 @@ Real-time conversation visualization. Receives audio from browser,
 dispatches to STT, proxies LLM calls, manages graph reconciliation.
 """
 
-import asyncio, json, time, threading, queue, sys, argparse, os, uuid, base64
+import asyncio, json, time, threading, queue, argparse, os, uuid, base64
 from contextlib import asynccontextmanager
 
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 import aiohttp
+from loguru import logger
 
 import db
 import stt_worker
@@ -631,7 +632,7 @@ async def start_export(session_id: str, fmt: str, request: Request):
         except Exception as e:
             _export_tasks[task_key]["status"] = "error"
             _export_tasks[task_key]["error"] = str(e)
-            print(f"Export error ({fmt} {session_id}): {e}", file=sys.stderr)
+            logger.error(f"Export error ({fmt} {session_id}): {e}")
 
     asyncio.create_task(run_export())
     return JSONResponse({"status": "started", "format": fmt})
@@ -839,7 +840,7 @@ Rules:
 
         except json.JSONDecodeError as e:
             last_error = e
-            print(f"  Recap parse attempt {attempt + 1} failed: {e}", file=sys.stderr)
+            logger.error(f"Recap parse attempt {attempt + 1} failed: {e}")
             if attempt < max_attempts - 1:
                 continue
             # Final failure — store error state
@@ -913,7 +914,7 @@ async def _run_clean_job(session_id: str, segments: list[dict]):
                 "finished_at": time.time(),
             }
     except Exception as e:
-        print(f"  Clean job {session_id} crashed: {type(e).__name__}: {e}", file=sys.stderr)
+        logger.error(f"Clean job {session_id} crashed: {type(e).__name__}: {e}")
         log_activity("clean", session_id, "error", f"{type(e).__name__}: {e}")
         with _clean_jobs_lock:
             _clean_jobs[session_id] = {
@@ -1100,7 +1101,7 @@ Rules:
     for idx, items, err in results:
         all_cleaned.extend(items)
         if err:
-            print(f"  Clean chunk {idx + 1}: {err}", file=sys.stderr)
+            logger.error(f"Clean chunk {idx + 1}: {err}")
             failed_chunks.append({"chunk": idx + 1, "error": err})
 
     await db.store_cleaned_segments(session_id, all_cleaned)
@@ -2188,7 +2189,7 @@ async def snapshot_loop():
                     reconciler.get_full_state(), "periodic"
                 )
             except Exception as e:
-                print(f"  Snapshot error: {e}", file=sys.stderr)
+                logger.error(f"Snapshot error: {e}")
 
 
 # ─── Entry point ───
