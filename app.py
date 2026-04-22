@@ -20,6 +20,7 @@ import stt_worker
 from stt_worker import configure_stt, get_stt_config
 from reconciler import GraphReconciler
 import routes_facilitator
+import corpus as corpus_module
 
 # ─── Load .env ───
 _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -288,6 +289,60 @@ def _next_seq() -> int:
     with _seq_lock:
         _seq_counter += 1
         return _seq_counter
+
+
+# ─── Q&A LLM helpers ─────────────────────────────────────────────────────────
+
+async def _qa_llm_call_chain(system: str, user: str, chain: list[dict]) -> str:
+    """Walk the chain and return the first successful text response."""
+    for tier in chain:
+        try:
+            return await _qa_llm_call(tier, system, user)
+        except Exception as e:
+            logger.warning(f"[qa] LLM tier {tier.get('provider')}/{tier.get('model')} failed: {e}")
+            continue
+    return "LLM indisponible."
+
+
+async def _qa_llm_call(tier: dict, system: str, user: str) -> str:
+    """Single-tier LLM call for simple chat completions (no graph parsing)."""
+    provider = tier["provider"]
+    model = tier["model"]
+    timeout = aiohttp.ClientTimeout(total=60)
+
+    if provider == "anthropic":
+        url = f"{ANTHROPIC_BASE_URL}/v1/messages"
+        headers = {"anthropic-version": "2023-06-01", "content-type": "application/json"}
+        if ANTHROPIC_AUTH_TOKEN:
+            headers["Authorization"] = f"Bearer {ANTHROPIC_AUTH_TOKEN}"
+        else:
+            headers["x-api-key"] = ANTHROPIC_API_KEY
+        body = {"model": model, "max_tokens": 2048, "system": system,
+                "messages": [{"role": "user", "content": user}]}
+        async with aiohttp.ClientSession() as s:
+            async with s.post(url, headers=headers, json=body, timeout=timeout) as r:
+                if r.status != 200:
+                    raise RuntimeError(f"Anthropic API error {r.status}: {await r.text()}")
+                data = await r.json()
+                return data["content"][0]["text"]
+
+    if provider == "hugin":
+        url = f"{HUGIN_BASE_URL}/v1/chat/completions"
+        headers = _hugin_headers()
+    else:  # gemini
+        url = f"{GEMINI_BASE_URL}/chat/completions"
+        headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
+
+    body = {
+        "model": model, "max_tokens": 2048,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+    }
+    async with aiohttp.ClientSession() as s:
+        async with s.post(url, headers=headers, json=body, timeout=timeout) as r:
+            if r.status != 200:
+                raise RuntimeError(f"{provider} API error {r.status}: {await r.text()}")
+            data = await r.json()
+            return data["choices"][0]["message"]["content"]
 
 
 # ─── Lifespan ───
