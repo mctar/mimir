@@ -382,11 +382,21 @@ Output ONLY the complete HTML. Nothing else."""
     if not chain:
         raise RuntimeError("No LLM chain provided. Cannot generate slides.")
 
+    topic = session.get('topic', 'Untitled')
+    n_nodes = len(nodes_text.split(",")) if nodes_text else 0
+    print(f"Slides export: session={session_id[:8]}… topic='{topic}' nodes={n_nodes}")
+    print(f"  Prompt: {len(user_prompt)} chars | Chain: {[t['provider']+'/'+t['model'] for t in chain]}")
+
     html_text = None
     last_error = None
     for tier in chain:
+        provider, model = tier["provider"], tier["model"]
+        print(f"  Calling {provider}/{model}…", flush=True)
+        t0 = __import__("time").time()
         try:
             raw = await _llm_call_slides(tier, _SLIDES_SYSTEM, user_prompt)
+            dt = __import__("time").time() - t0
+            print(f"  {provider}/{model}: {len(raw)} chars in {dt:.1f}s")
             # Strip markdown fencing if present
             m = re.search(r'```(?:html)?\s*(<!DOCTYPE|<html).*?```', raw, re.DOTALL | re.IGNORECASE)
             if m:
@@ -400,10 +410,14 @@ Output ONLY the complete HTML. Nothing else."""
             if html_text:
                 if not html_text.rstrip().lower().endswith("</html>"):
                     html_text = html_text.rstrip() + "\n</html>"
+                print(f"  HTML extracted: {len(html_text)} chars")
                 break
+            else:
+                print(f"  WARNING: no HTML found in response, trying next tier", file=sys.stderr)
         except Exception as e:
-            logging.warning("export_slides: tier %s/%s failed: %s",
-                            tier.get("provider"), tier.get("model"), e)
+            dt = __import__("time").time() - t0
+            print(f"  {provider}/{model}: FAILED after {dt:.1f}s — {e}", file=sys.stderr)
+            logging.warning("export_slides: tier %s/%s failed: %s", provider, model, e)
             last_error = e
 
     if not html_text:
