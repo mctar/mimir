@@ -5,7 +5,7 @@ Real-time conversation visualization. Receives audio from browser,
 dispatches to STT, proxies LLM calls, manages graph reconciliation.
 """
 
-import asyncio, json, time, threading, queue, sys, argparse, os, uuid, base64
+import asyncio, json, time, threading, queue, argparse, os, uuid, base64
 from contextlib import asynccontextmanager
 
 import numpy as np
@@ -1355,7 +1355,7 @@ async def list_llm_providers():
                                 "note": size,
                             })
         except Exception as e:
-            print(f"  Hugin model list failed: {e}", file=sys.stderr)
+            logger.error(f"Hugin model list failed: {e}")
             providers["hugin"]["available"] = False
             providers["hugin"]["error"] = str(e)
 
@@ -1455,7 +1455,7 @@ async def set_active_llm(request: Request):
             _llm_chain.insert(0, {"provider": provider, "model": model})
         new_chain = [dict(t) for t in _llm_chain]
 
-    print(f"  LLM chain: updated tier {provider} → {model}")
+    logger.info(f"LLM chain: updated tier {provider} → {model}")
     _publish_llm_state()
     return JSONResponse({"chain": new_chain, "active": {"provider": provider, "model": model}})
 
@@ -1542,7 +1542,7 @@ async def set_active_stt(request: Request):
     configure_stt(backend, "", lang)
     new = get_stt_config()
 
-    print(f"  STT config: backend={new['backend']}, language={new['language'] or 'auto'}")
+    logger.info(f"STT config: backend={new['backend']}, language={new['language'] or 'auto'}")
     return JSONResponse({"active": new})
 
 
@@ -1616,7 +1616,7 @@ async def _call_hugin(body: dict) -> tuple[int, dict]:
         },
     }
 
-    print(f"  Hugin request: model={model}, think={ollama_body['think']}, num_predict=2048")
+    logger.debug(f"Hugin request: model={model}, think={ollama_body['think']}, num_predict=2048")
 
     async with aiohttp.ClientSession() as session:
         async with session.post(
@@ -1636,9 +1636,9 @@ async def _call_hugin(body: dict) -> tuple[int, dict]:
             msg = data.get("message", {})
             text = msg.get("content") or ""
             if not text:
-                print(f"  Hugin: empty content. Message keys: {list(msg.keys())}", file=sys.stderr)
-                print(f"  Hugin: raw response keys: {list(data.keys())}", file=sys.stderr)
-                print(f"  Hugin: raw message: {json.dumps(msg)[:500]}", file=sys.stderr)
+                logger.error(f"Hugin: empty content. Message keys: {list(msg.keys())}")
+                logger.error(f"Hugin: raw response keys: {list(data.keys())}")
+                logger.error(f"Hugin: raw message: {json.dumps(msg)[:500]}")
 
             # Translate to Anthropic format; extract usage from Ollama metrics
             result = {"content": [{"type": "text", "text": text}]}
@@ -1699,8 +1699,8 @@ async def _call_gemini(body: dict) -> tuple[int, dict]:
             if not text:
                 text = msg.get("reasoning_content") or ""
             if not text:
-                print(f"  Gemini: empty content. Keys: {list(msg.keys())}", file=sys.stderr)
-                print(f"  Gemini: choice: {json.dumps(choice)[:500]}", file=sys.stderr)
+                logger.error(f"Gemini: empty content. Keys: {list(msg.keys())}")
+                logger.error(f"Gemini: choice: {json.dumps(choice)[:500]}")
             result = {"content": [{"type": "text", "text": text}]}
             if "usage" in data:
                 result["_usage"] = data["usage"]
@@ -1812,7 +1812,7 @@ async def call_llm_chain(body: dict) -> tuple[int, dict, str, str]:
             status, data = await _call_provider(provider, tier_body)
         except asyncio.TimeoutError:
             dt = time.time() - t0
-            print(f"  LLM [{provider}]: TIMEOUT after {dt:.1f}s", file=sys.stderr)
+            logger.error(f"LLM [{provider}]: TIMEOUT after {dt:.1f}s")
             _cb_record_failure(provider)
             attempts.append(f"{provider}:timeout")
             last_status = 504
@@ -1820,7 +1820,7 @@ async def call_llm_chain(body: dict) -> tuple[int, dict, str, str]:
             continue
         except Exception as e:
             dt = time.time() - t0
-            print(f"  LLM [{provider}]: EXCEPTION ({dt:.1f}s) — {type(e).__name__}: {e}", file=sys.stderr)
+            logger.error(f"LLM [{provider}]: EXCEPTION ({dt:.1f}s) — {type(e).__name__}: {e}")
             _cb_record_failure(provider)
             attempts.append(f"{provider}:{type(e).__name__}")
             last_status = 500
@@ -1833,7 +1833,7 @@ async def call_llm_chain(body: dict) -> tuple[int, dict, str, str]:
             _cb_record_success(provider)
             _last_serving_provider = provider
             if attempts:
-                print(f"  LLM chain: demoted through [{', '.join(attempts)}] → served by {provider}/{model} ({dt:.1f}s)")
+                logger.warning(f"LLM chain: demoted through [{', '.join(attempts)}] → served by {provider}/{model} ({dt:.1f}s)")
             return status, data, provider, model
 
         # Non-200: record failure and try the next tier.
@@ -1847,11 +1847,11 @@ async def call_llm_chain(body: dict) -> tuple[int, dict, str, str]:
         hard = (status == 429)
         _cb_record_failure(provider, hard=hard)
         attempts.append(f"{provider}:{status}")
-        print(f"  LLM [{provider}]: {status} ({dt:.1f}s) — {err_msg}", file=sys.stderr)
+        logger.error(f"LLM [{provider}]: {status} ({dt:.1f}s) — {err_msg}")
         last_status = status
         last_data = data
 
-    print(f"  LLM chain: ALL TIERS FAILED — [{', '.join(attempts)}]", file=sys.stderr)
+    logger.error(f"LLM chain: ALL TIERS FAILED — [{', '.join(attempts)}]")
     return last_status, last_data, "", ""
 
 
@@ -1905,7 +1905,7 @@ async def _proxy_claude(websocket: WebSocket, req: dict):
 
         if status_code == 200:
             cost_str = f"${call_cost:.4f}" if call_cost > 0 else "free"
-            print(f"  LLM [{provider}/{model}]: 200 OK ({dt:.1f}s, {usage['input']}+{usage['output']} tok, {cost_str})")
+            logger.info(f"LLM [{provider}/{model}]: 200 OK ({dt:.1f}s, {usage['input']}+{usage['output']} tok, {cost_str})")
             with metrics_lock:
                 metrics["claude_last_error"] = ""
 
@@ -1918,10 +1918,10 @@ async def _proxy_claude(websocket: WebSocket, req: dict):
                     # while the LLM was responding, _session_gen has advanced
                     # and we must discard this response.
                     if _session_gen != _req_gen:
-                        print(f"  LLM: discarding stale response (gen {_req_gen} → {_session_gen}, session {_req_session_id} → {_current_session_id})")
+                        logger.debug(f"LLM: discarding stale response (gen {_req_gen} → {_session_gen}, session {_req_session_id} → {_current_session_id})")
                         return
                     if _current_session_id != _req_session_id:
-                        print(f"  LLM: discarding stale response (session changed {_req_session_id} → {_current_session_id})")
+                        logger.debug(f"LLM: discarding stale response (session changed {_req_session_id} → {_current_session_id})")
                         return
                     n_before = len(reconciler.nodes)
                     graph = reconciler.reconcile(parsed)
@@ -1945,7 +1945,7 @@ async def _proxy_claude(websocket: WebSocket, req: dict):
                         metrics["edge_churn_per_min"] = churn["edge_churn_per_min"]
                         metrics["llm_parse_ok"] = metrics.get("llm_parse_ok", 0) + 1
                         metrics["llm_last_node_count"] = len(parsed.get("nodes", []))
-                    print(f"  LLM: parsed {len(parsed['nodes'])} nodes, {len(parsed.get('edges',[]))} edges (reconciler: {n_before}→{n_after})")
+                    logger.info(f"LLM: parsed {len(parsed['nodes'])} nodes, {len(parsed.get('edges',[]))} edges (reconciler: {n_before}→{n_after})")
 
                     graph_msg = json.dumps({"type": "graph_update", "graph": graph, "session_id": _current_session_id})
                     for ws in list(connected_clients):
@@ -1954,12 +1954,12 @@ async def _proxy_claude(websocket: WebSocket, req: dict):
                         except Exception:
                             pass
                 else:
-                    print(f"  LLM: parsed JSON but missing nodes/edges keys", file=sys.stderr)
+                    logger.error("LLM: parsed JSON but missing nodes/edges keys")
                     with metrics_lock:
                         metrics["llm_parse_no_graph"] = metrics.get("llm_parse_no_graph", 0) + 1
             except (json.JSONDecodeError, KeyError) as parse_err:
-                print(f"  LLM: response parse error: {parse_err}", file=sys.stderr)
-                print(f"  LLM: raw text: {raw_text[:500]}", file=sys.stderr)
+                logger.error(f"LLM: response parse error: {parse_err}")
+                logger.error(f"LLM: raw text: {raw_text[:500]}")
                 with metrics_lock:
                     metrics["llm_parse_fail"] = metrics.get("llm_parse_fail", 0) + 1
                     metrics["llm_last_raw_fail"] = raw_text[:500]
@@ -1978,7 +1978,7 @@ async def _proxy_claude(websocket: WebSocket, req: dict):
         await _broadcast_llm_response(status_code, data, req.get("req_id"))
     except Exception as e:
         dt = time.time() - t0
-        print(f"  LLM: EXCEPTION in proxy ({dt:.1f}s) — {type(e).__name__}: {e}", file=sys.stderr)
+        logger.error(f"LLM: EXCEPTION in proxy ({dt:.1f}s) — {type(e).__name__}: {e}")
         with metrics_lock:
             metrics["claude_calls"] += 1
             metrics["claude_errors"] += 1
@@ -1998,7 +1998,7 @@ async def _handle_audio_chunk(audio_arr: np.ndarray, source_rate: int):
             audio_arr, source_rate, metrics, metrics_lock,
         )
     except Exception as e:
-        print(f"  STT error: {e}", file=sys.stderr)
+        logger.error(f"STT error: {e}")
         return
 
     if result:
