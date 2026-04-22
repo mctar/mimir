@@ -2235,6 +2235,33 @@ async def _proxy_claude(websocket: WebSocket, req: dict):
                             await ws.send_text(graph_msg)
                         except Exception:
                             pass
+
+                    # Parse and broadcast slide_updates if present
+                    slide_updates = parsed.get("slide_updates", [])
+                    if isinstance(slide_updates, list) and slide_updates:
+                        now = time.time()
+                        updated_ids = []
+                        for upd in slide_updates:
+                            sid = upd.get("slide_id")
+                            if sid and sid in _slides:
+                                new_bullets = upd.get("bullets", [])
+                                if isinstance(new_bullets, list) and new_bullets:
+                                    _slides[sid]["bullets"] = [str(b) for b in new_bullets[:5]]
+                                if upd.get("key_quote"):
+                                    _slides[sid]["key_quote"] = str(upd["key_quote"])
+                                _slides[sid]["updated_at"] = now
+                                updated_ids.append(sid)
+                        if updated_ids:
+                            slide_msg = json.dumps({
+                                "type": "slide_update",
+                                "slides": {sid: _slides[sid] for sid in updated_ids},
+                            })
+                            for ws in list(connected_clients):
+                                try:
+                                    await ws.send_text(slide_msg)
+                                except Exception:
+                                    pass
+                            logger.info(f"Slides: updated {updated_ids}")
                 else:
                     logger.error("LLM: parsed JSON but missing nodes/edges keys")
                     with metrics_lock:
@@ -2336,6 +2363,7 @@ async def ws_endpoint(websocket: WebSocket):
             "snapshot": snapshot,
             "segments": segments,
             "restore_ms": 0,
+            "slides": _slides,
         })
     try:
         while True:
@@ -2388,6 +2416,7 @@ async def ws_endpoint(websocket: WebSocket):
                         "snapshot": snapshot,
                         "segments": segments,
                         "restore_ms": round(restore_ms, 1),
+                        "slides": _slides,
                     })
 
             elif msg_type == "frontend_metrics":
