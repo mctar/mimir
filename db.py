@@ -93,6 +93,12 @@ async def init_db(path: str = DB_PATH):
     if "source" not in session_cols:
         await _db.execute("ALTER TABLE sessions ADD COLUMN source TEXT DEFAULT 'live'")
 
+    # Add active column to corpus_docs (idempotent)
+    cursor = await _db.execute("PRAGMA table_info(corpus_docs)")
+    corpus_cols = {row[1] for row in await cursor.fetchall()}
+    if "active" not in corpus_cols:
+        await _db.execute("ALTER TABLE corpus_docs ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+
     # Cross-session synthesis recaps table
     await _db.execute("""
         CREATE TABLE IF NOT EXISTS synthesis_recaps (
