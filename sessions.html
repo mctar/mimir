@@ -1420,14 +1420,32 @@ async function sendQaQuestion() {
   container.appendChild(loadingRow);
   container.scrollTop = container.scrollHeight;
 
+  const loadingBubble = loadingRow.querySelector('.qa-bubble--assistant');
+
   try {
     const resp = await fetch(`/v1/sessions/${sessionId}/qa`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, history: _qaHistory.slice(0, -1) }),
+      body: JSON.stringify({ question, history: _qaHistory.slice(0, -1), stream: true }),
     });
-    const data = await resp.json();
-    _qaHistory.push({ role: 'assistant', content: data.error ? `Erreur : ${data.error}` : (data.answer || '') });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      fullText += decoder.decode(value, { stream: true });
+      if (loadingBubble) {
+        loadingBubble.style.color = '';
+        loadingBubble.innerHTML = marked.parse(fullText);
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+
+    _qaHistory.push({ role: 'assistant', content: fullText });
   } catch {
     _qaHistory.push({ role: 'assistant', content: "Impossible d'obtenir une réponse." });
   } finally {

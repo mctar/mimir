@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 
 import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, StreamingResponse
 import aiohttp
 from log import logger
 import db
@@ -345,6 +345,96 @@ async def _qa_llm_call(tier: dict, system: str, messages: list[dict],
             return data["choices"][0]["message"]["content"]
 
 
+async def _qa_llm_stream_call(tier: dict, system: str, messages: list[dict],
+                               max_tokens: int = 2048, timeout_secs: int = 60):
+    """Async generator: yield text chunks from a single LLM tier (streaming)."""
+    provider = tier["provider"]
+    model = tier["model"]
+    timeout = aiohttp.ClientTimeout(total=timeout_secs)
+
+    if provider == "anthropic":
+        url = f"{ANTHROPIC_BASE_URL}/v1/messages"
+        headers = {"anthropic-version": "2023-06-01", "content-type": "application/json"}
+        if ANTHROPIC_AUTH_TOKEN:
+            headers["Authorization"] = f"Bearer {ANTHROPIC_AUTH_TOKEN}"
+        else:
+            headers["x-api-key"] = ANTHROPIC_API_KEY
+        body = {"model": model, "max_tokens": max_tokens, "system": system,
+                "messages": messages, "stream": True}
+        async with aiohttp.ClientSession() as s:
+            async with s.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
+                if r.status != 200:
+                    raise RuntimeError(f"Anthropic API error {r.status}: {await r.text()}")
+                async for raw in r.content:
+                    line = raw.decode().strip()
+                    if not line.startswith("data: "):
+                        continue
+                    data = line[6:]
+                    if data == "[DONE]":
+                        break
+                    try:
+                        ev = json.loads(data)
+                        if ev.get("type") == "content_block_delta":
+                            chunk = ev.get("delta", {}).get("text", "")
+                            if chunk:
+                                yield chunk
+                    except json.JSONDecodeError:
+                        pass
+        return
+
+    # Hugin (Ollama) and Gemini — OpenAI-compatible streaming (SSE)
+    if provider == "hugin":
+        url = f"{HUGIN_BASE_URL}/v1/chat/completions"
+        headers = _hugin_headers()
+    else:  # gemini
+        url = f"{GEMINI_BASE_URL}/chat/completions"
+        headers = {"Authorization": f"Bearer {GEMINI_API_KEY}", "Content-Type": "application/json"}
+
+    body = {
+        "model": model, "max_tokens": max_tokens, "stream": True,
+        "messages": [{"role": "system", "content": system}] + messages,
+    }
+    async with aiohttp.ClientSession() as s:
+        async with s.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
+            if r.status != 200:
+                raise RuntimeError(f"{provider} API error {r.status}: {await r.text()}")
+            async for raw in r.content:
+                line = raw.decode().strip()
+                if not line.startswith("data: "):
+                    continue
+                data = line[6:]
+                if data == "[DONE]":
+                    break
+                try:
+                    ev = json.loads(data)
+                    chunk = ev["choices"][0]["delta"].get("content", "")
+                    if chunk:
+                        yield chunk
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    pass
+
+
+async def _qa_llm_stream_call_chain(system: str, messages: list[dict], chain: list[dict],
+                                     max_tokens: int = 2048, timeout_secs: int = 60):
+    """Async generator: walk the chain, stream from first successful tier."""
+    for tier in chain:
+        started = False
+        try:
+            async for chunk in _qa_llm_stream_call(tier, system, messages,
+                                                    max_tokens=max_tokens,
+                                                    timeout_secs=timeout_secs):
+                started = True
+                yield chunk
+            return  # success
+        except Exception as e:
+            logger.warning(f"[qa/stream] {tier.get('provider')}/{tier.get('model')} failed: {e}")
+            if started:
+                yield "\n\n*(erreur de connexion au modèle)*"
+                return
+            continue  # try next tier only if nothing was sent yet
+    yield "LLM indisponible."
+
+
 # ─── Lifespan ───
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -669,6 +759,13 @@ async def session_qa(session_id: str, request: Request):
     ]
     with _llm_chain_lock:
         chain = list(_llm_chain)
+
+    if body.get("stream", False):
+        async def event_stream():
+            async for chunk in _qa_llm_stream_call_chain(system, messages, chain):
+                yield chunk.encode()
+        return StreamingResponse(event_stream(), media_type="text/plain; charset=utf-8")
+
     answer = await _qa_llm_call_chain(system, messages, chain)
     return JSONResponse({"answer": answer})
 
