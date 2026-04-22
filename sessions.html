@@ -1177,7 +1177,7 @@ function renderDetail() {
 
   renderRecap();
   renderTranscript();
-  initQaTab();   // reset Q&A history and load corpus badge
+  initQaTab();   // reset Q&A history (sync) + load corpus badge in background (async)
   // Reset to recap tab
   switchTab('recap');
 }
