@@ -4,10 +4,11 @@ Mount via: app.include_router(routes_facilitator.router)
 Configure via: routes_facilitator.configure(...)
 """
 
-import json, re, time, io, os, datetime, logging
+import json, re, time, io, os, datetime
 import aiohttp
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from log import logger
 
 import db as db_module
 import corpus as corpus_module
@@ -237,7 +238,7 @@ async def _call_synthesis_llm(system: str, user: str, chain: list[dict]) -> dict
             if match:
                 return json.loads(match.group())
         except Exception as e:
-            logging.warning("[synthesis] LLM tier %s/%s failed: %s", tier.get('provider'), tier.get('model'), e)
+            logger.warning(f"[synthesis] LLM tier {tier.get('provider')}/{tier.get('model')} failed: {e}")
             continue
     return {"themes": [], "error": "llm_unavailable"}
 
@@ -247,7 +248,7 @@ async def _call_qa_llm(system: str, user: str, chain: list[dict]) -> str:
         try:
             return await _llm_call(tier, system, user)
         except Exception as e:
-            logging.warning("[qa] LLM tier %s/%s failed: %s", tier.get('provider'), tier.get('model'), e)
+            logger.warning(f"[qa] LLM tier {tier.get('provider')}/{tier.get('model')} failed: {e}")
             continue
     return "LLM indisponible."
 
