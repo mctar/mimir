@@ -922,6 +922,38 @@ h1 {
 }
 .qa-textarea:focus { border-color: var(--color-brand-light); }
 .qa-send-btn { white-space: nowrap; align-self: flex-end; }
+
+/* ========== LIGHT THEME ========== */
+[data-theme="light"] {
+  --bg:    #EEF2F7;
+  --panel: #FFFFFF;
+  --card:  rgba(0, 88, 171, 0.04);
+  --bdr:   rgba(0, 88, 171, 0.12);
+  --txt:   #2C3E5A;
+  --dim:   #7A8A9E;
+  --bright:#121A38;
+  --green: #0058AB;
+}
+[data-theme="light"] .transcript-seg { border-bottom-color: rgba(0,0,0,0.06); }
+[data-theme="light"] .seg-stt { background: rgba(0,88,171,0.06); }
+[data-theme="light"] .synth-conn-card { background: rgba(0,88,171,0.03); }
+[data-theme="light"] .nav-tab.active { background: rgba(0,88,171,0.08); }
+
+#theme-toggle {
+  background: transparent;
+  border: 1px solid var(--bdr);
+  border-radius: 4px;
+  color: var(--dim);
+  cursor: pointer;
+  font-family: 'Ubuntu Mono', monospace;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 8px;
+  transition: all .2s;
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+#theme-toggle:hover { border-color: var(--green); color: var(--green); }
 </style>
 </head>
 <body>
@@ -933,6 +965,7 @@ h1 {
     <a href="/sessions/archive" class="nav-tab" id="nav-archive">Archive</a>
     <a href="/doc" class="nav-tab">Guide</a>
   </div>
+  <button id="theme-toggle" title="Toggle light/dark mode">☀</button>
 </nav>
 
 <!-- ═══ List View ═══ -->
@@ -1077,6 +1110,26 @@ h1 {
 <div class="toast" id="toast"></div>
 
 <script>
+// ─── Theme ───
+(function() {
+  const t = localStorage.getItem('mimir-theme') || 'dark';
+  document.documentElement.setAttribute('data-theme', t);
+  document.getElementById('theme-toggle').textContent = t === 'light' ? '☾' : '☀';
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('mimir-theme', next);
+    document.getElementById('theme-toggle').textContent = next === 'light' ? '☾' : '☀';
+  });
+  window.addEventListener('storage', e => {
+    if (e.key === 'mimir-theme') {
+      const v = e.newValue || 'dark';
+      document.documentElement.setAttribute('data-theme', v);
+      document.getElementById('theme-toggle').textContent = v === 'light' ? '☾' : '☀';
+    }
+  });
+})();
+
 // ─── State ───
 let sessions = [];
 let current = null;  // { session, transcript, snapshot, recap }
