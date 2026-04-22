@@ -516,6 +516,17 @@ async def serve_monitor():
     return FileResponse(os.path.join(os.path.dirname(__file__), "monitor.html"))
 
 
+@app.get("/slides", response_class=HTMLResponse)
+async def serve_slides():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "slides.html"))
+
+
+@app.get("/api/slides")
+async def get_slides_state():
+    """Return current slide state for initialization by new slide viewers."""
+    return JSONResponse({"slides": _slides, "template": SLIDE_TEMPLATE})
+
+
 @app.get("/doc", response_class=HTMLResponse)
 async def serve_doc():
     return FileResponse(os.path.join(os.path.dirname(__file__), "doc.html"))
