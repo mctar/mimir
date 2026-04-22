@@ -674,6 +674,7 @@ async def end_session(session_id: str, request: Request):
     reconciler.edges.clear()
     reconciler._mention_log.clear()
     reconciler._churn_log.clear()
+    _reset_slides()
     _summary = ""
     with _seq_lock:
         _seq_counter = 0
