@@ -13,6 +13,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 import aiohttp
 
+from log import logger
 import db
 import stt_worker
 from stt_worker import configure_stt, get_stt_config
@@ -294,7 +295,7 @@ async def lifespan(app: FastAPI):
     await db.init_db()
     # Default STT backend
     configure_stt("remote", remote_url=STT_SERVER_URL)
-    print(f"  STT: faster-whisper ({STT_SERVER_URL})")
+    logger.info(f"STT: faster-whisper ({STT_SERVER_URL})")
 
     async def _ws_broadcast(message: str):
         """Broadcast a text message to all connected WebSocket clients."""
@@ -314,10 +315,10 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(broadcast_loop())
     asyncio.create_task(snapshot_loop())
     asyncio.create_task(_synthesis_loop())
-    print(f"  Server ready — audio arrives from browser via WebSocket")
-    print(f"  Main:     http://0.0.0.0:{WS_PORT}/")
-    print(f"  Monitor:  http://0.0.0.0:{WS_PORT}/monitor")
-    print(f"  Sessions: http://0.0.0.0:{WS_PORT}/sessions\n")
+    logger.info("Server ready — audio arrives from browser via WebSocket")
+    logger.info(f"Main:     http://0.0.0.0:{WS_PORT}/")
+    logger.info(f"Monitor:  http://0.0.0.0:{WS_PORT}/monitor")
+    logger.info(f"Sessions: http://0.0.0.0:{WS_PORT}/sessions")
     yield
     await db.close_db()
 
@@ -622,7 +623,7 @@ async def start_export(session_id: str, fmt: str, request: Request):
         except Exception as e:
             _export_tasks[task_key]["status"] = "error"
             _export_tasks[task_key]["error"] = str(e)
-            print(f"Export error ({fmt} {session_id}): {e}", file=sys.stderr)
+            logger.error(f"Export error ({fmt} {session_id}): {e}")
 
     asyncio.create_task(run_export())
     return JSONResponse({"status": "started", "format": fmt})
@@ -830,7 +831,7 @@ Rules:
 
         except json.JSONDecodeError as e:
             last_error = e
-            print(f"  Recap parse attempt {attempt + 1} failed: {e}", file=sys.stderr)
+            logger.error(f"Recap parse attempt {attempt + 1} failed: {e}")
             if attempt < max_attempts - 1:
                 continue
             # Final failure — store error state
@@ -904,7 +905,7 @@ async def _run_clean_job(session_id: str, segments: list[dict]):
                 "finished_at": time.time(),
             }
     except Exception as e:
-        print(f"  Clean job {session_id} crashed: {type(e).__name__}: {e}", file=sys.stderr)
+        logger.error(f"Clean job {session_id} crashed: {type(e).__name__}: {e}")
         log_activity("clean", session_id, "error", f"{type(e).__name__}: {e}")
         with _clean_jobs_lock:
             _clean_jobs[session_id] = {
@@ -1091,7 +1092,7 @@ Rules:
     for idx, items, err in results:
         all_cleaned.extend(items)
         if err:
-            print(f"  Clean chunk {idx + 1}: {err}", file=sys.stderr)
+            logger.error(f"Clean chunk {idx + 1}: {err}")
             failed_chunks.append({"chunk": idx + 1, "error": err})
 
     await db.store_cleaned_segments(session_id, all_cleaned)
@@ -2037,7 +2038,7 @@ async def ws_endpoint(websocket: WebSocket):
     connected_clients.add(websocket)
     with metrics_lock:
         metrics["ws_clients"] = len(connected_clients)
-    print(f"Browser connected ({len(connected_clients)} clients)")
+    logger.info(f"Browser connected ({len(connected_clients)} clients)")
     await websocket.send_json({
         "type": "status", "status": "connected",
         "message": "STT server ready",
@@ -2125,7 +2126,7 @@ async def ws_endpoint(websocket: WebSocket):
         client_sessions.pop(websocket, None)
         with metrics_lock:
             metrics["ws_clients"] = len(connected_clients)
-        print(f"Browser disconnected ({len(connected_clients)} clients)")
+        logger.info(f"Browser disconnected ({len(connected_clients)} clients)")
 
 
 # ─── Background loops ───
@@ -2165,7 +2166,7 @@ async def _synthesis_loop():
             try:
                 await routes_facilitator._run_synthesis()
             except Exception as e:
-                print(f"[synthesis_loop] error: {e}", flush=True)
+                logger.error(f"[synthesis_loop] error: {e}")
 
 
 async def snapshot_loop():
@@ -2179,7 +2180,7 @@ async def snapshot_loop():
                     reconciler.get_full_state(), "periodic"
                 )
             except Exception as e:
-                print(f"  Snapshot error: {e}", file=sys.stderr)
+                logger.error(f"Snapshot error: {e}")
 
 
 # ─── Entry point ───
@@ -2191,9 +2192,9 @@ if __name__ == "__main__":
     p.add_argument("--port", type=int, default=8765, help="Bind port")
     args = p.parse_args()
 
-    print("=" * 50)
-    print("  Mímir : Server")
-    print("=" * 50 + "\n")
+    logger.info("=" * 50)
+    logger.info("Mímir : Server")
+    logger.info("=" * 50)
 
     WS_PORT = args.port
 

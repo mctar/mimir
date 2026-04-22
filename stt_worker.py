@@ -10,6 +10,7 @@ All backends use the same /v1/transcribe raw PCM endpoint with query params.
 
 import time, threading, os
 import numpy as np
+from log import logger
 
 SAMPLE_RATE = 16000  # All STT backends expect 16kHz
 
@@ -51,7 +52,7 @@ def _clean_whisper_output(text: str) -> str:
 
     # Exact match against known hallucinations
     if stripped.lower().rstrip(".!,") in _WHISPER_HALLUCINATIONS or stripped.lower() in _WHISPER_HALLUCINATIONS:
-        print(f"  [Filter] hallucination dropped: '{stripped}'")
+        logger.debug(f"[Filter] hallucination dropped: '{stripped}'")
         return ""
 
     # Repetition detection — if the same short phrase repeats 3+ times, it's looping
@@ -60,7 +61,7 @@ def _clean_whisper_output(text: str) -> str:
         chunk = " ".join(words[:2]).lower()
         count = stripped.lower().count(chunk)
         if count >= 3:
-            print(f"  [Filter] repetition loop dropped: '{stripped[:80]}...'")
+            logger.debug(f"[Filter] repetition loop dropped: '{stripped[:80]}...'")
             return ""
 
     return stripped
@@ -84,7 +85,7 @@ def _is_duplicate(text: str) -> bool:
     """Check if this is a duplicate of the previous result."""
     now = time.time()
     if text == _prev_result["text"] and (now - _prev_result["time"]) < 10.0:
-        print(f"  [Filter] duplicate dropped: '{text[:60]}'")
+        logger.debug(f"[Filter] duplicate dropped: '{text[:60]}'")
         return True
     _prev_result["text"] = text
     _prev_result["time"] = now
@@ -172,7 +173,7 @@ def _transcribe_backend(audio_arr: np.ndarray, metrics: dict, metrics_lock,
     dt = time.time() - t0
 
     if resp.status_code != 200:
-        print(f"  {label} STT error: {resp.status_code} {resp.text[:200]}")
+        logger.error(f"{label} STT error: {resp.status_code} {resp.text[:200]}")
         return {"text": "", "language": "", "latency_ms": int(dt * 1000)}
 
     data = resp.json()
@@ -187,7 +188,7 @@ def _transcribe_backend(audio_arr: np.ndarray, metrics: dict, metrics_lock,
         if lang:
             metrics["stt_language"] = lang
 
-    print(f"  {label} STT ({dt:.1f}s, lang={lang}): '{raw_text}'")
+    logger.info(f"{label} STT ({dt:.1f}s, lang={lang}): '{raw_text}'")
     return {"text": raw_text, "language": lang, "latency_ms": int(dt * 1000)}
 
 

@@ -11,9 +11,10 @@ Usage:
     python replay.py recording.mp3 --stt-backend canary --chunk-seconds 10
 """
 
-import asyncio, argparse, json, os, subprocess, sys, threading, time, uuid
+import asyncio, argparse, json, os, subprocess, threading, time, uuid
 import numpy as np
 
+from log import logger
 import db
 import stt_worker
 from reconciler import GraphReconciler
@@ -178,13 +179,13 @@ async def replay_file(
     Returns {"session_id", "segments", "snapshots", "duration_s"}."""
 
     # Load and chunk audio
-    print(f"Loading {file_path}...")
+    logger.info(f"Loading {file_path}...")
     audio, sr = load_audio_file(file_path)
     duration_s = len(audio) / sr
-    print(f"  Duration: {duration_s:.1f}s ({duration_s/60:.1f}m)")
+    logger.info(f"Duration: {duration_s:.1f}s ({duration_s/60:.1f}m)")
 
     chunks = chunk_audio(audio, sr, chunk_seconds)
-    print(f"  Chunks: {len(chunks)} (≈{chunk_seconds}s each)")
+    logger.info(f"Chunks: {len(chunks)} (≈{chunk_seconds}s each)")
 
     # Init DB
     await db.init_db(db_path)
@@ -194,7 +195,7 @@ async def replay_file(
     filename = os.path.basename(file_path)
     session_topic = topic or filename
     await db.create_session(session_id, session_topic, source="replay")
-    print(f"  Session: {session_id} — {session_topic}")
+    logger.info(f"Session: {session_id} — {session_topic}")
 
     # Init reconciler (own instance, not the global)
     reconciler = GraphReconciler()
@@ -220,15 +221,14 @@ async def replay_file(
     if pinned:
         provider = llm_provider
         model = llm_model or ""
-        print(f"  LLM: pinned to {provider}/{model or '(default)'}")
+        logger.info(f"LLM: pinned to {provider}/{model or '(default)'}")
     else:
         with _llm_chain_lock:
             chain_desc = [f"{t['provider']}/{t['model']}" for t in _llm_chain]
         provider = ""
         model = ""
-        print(f"  LLM chain: {' → '.join(chain_desc)}")
-    print(f"  STT: {stt_worker.get_stt_config()['backend']}")
-    print()
+        logger.info(f"LLM chain: {' → '.join(chain_desc)}")
+    logger.info(f"STT: {stt_worker.get_stt_config()['backend']}")
 
     # Process chunks
     seq = 0
@@ -286,10 +286,10 @@ async def replay_file(
                             pipeline.summary = parsed["summary"]
                         pipeline.mark_sent()
                 else:
-                    print(f"  LLM error {status_code}: {data}", file=sys.stderr)
+                    logger.error(f"LLM error {status_code}: {data}")
 
             except Exception as e:
-                print(f"  LLM call failed: {e}", file=sys.stderr)
+                logger.error(f"LLM call failed: {e}")
 
         # Progress
         pct = (i + 1) / len(chunks) * 100
@@ -320,16 +320,13 @@ async def replay_file(
                     if parsed.get("summary"):
                         pipeline.summary = parsed["summary"]
         except Exception as e:
-            print(f"\n  Final analysis failed: {e}", file=sys.stderr)
+            logger.error(f"Final analysis failed: {e}")
 
     # End session
     await db.end_session(session_id, pipeline.summary)
     await db.store_snapshot(session_id, seq, reconciler.get_full_state(), "end")
 
-    print(f"\n\nDone. Session: {session_id}")
-    print(f"  Segments: {seq}")
-    print(f"  Snapshots: {snapshot_count}")
-    print(f"  Audio duration: {duration_s:.1f}s")
+    logger.info(f"Done. Session: {session_id} | segments: {seq} | snapshots: {snapshot_count} | duration: {duration_s:.1f}s")
 
     return {
         "session_id": session_id,

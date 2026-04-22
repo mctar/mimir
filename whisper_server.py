@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request, Query
 from fastapi.responses import JSONResponse
 import uvicorn
 from faster_whisper import WhisperModel
+from log import logger
 
 MODEL_SIZE = "small"
 
@@ -28,9 +29,9 @@ DEFAULT_PROMPT = (
     "Mímir, Whisper, Anthropic, Azure, Ollama, FastAPI."
 )
 
-print(f"  Loading Whisper model '{MODEL_SIZE}' on CPU (int8)...")
+logger.info(f"Loading Whisper model '{MODEL_SIZE}' on CPU (int8)...")
 model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
-print(f"  Model ready.")
+logger.info("Model ready.")
 
 app = FastAPI()
 
@@ -73,5 +74,5 @@ async def transcribe(
 
 
 if __name__ == "__main__":
-    print("  Whisper server starting on http://localhost:8766")
+    logger.info("Whisper server starting on http://localhost:8766")
     uvicorn.run(app, host="0.0.0.0", port=8766, log_level="warning")
