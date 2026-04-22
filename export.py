@@ -280,7 +280,7 @@ async def _llm_call_slides(tier: dict, system: str, user: str) -> str:
         body = {"model": model, "max_tokens": 8192, "system": system,
                 "messages": [{"role": "user", "content": user}]}
         async with aiohttp.ClientSession() as s:
-            async with s.post(url, headers=headers, json=body, timeout=timeout) as r:
+            async with s.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
                 if r.status != 200:
                     raise RuntimeError(f"Anthropic error {r.status}: {await r.text()}")
                 data = await r.json()
