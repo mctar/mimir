@@ -290,12 +290,12 @@ def _next_seq() -> int:
 
 # ─── Q&A LLM helpers ─────────────────────────────────────────────────────────
 
-async def _qa_llm_call_chain(system: str, user: str, chain: list[dict],
+async def _qa_llm_call_chain(system: str, messages: list[dict], chain: list[dict],
                              max_tokens: int = 2048, timeout_secs: int = 60) -> str:
     """Walk the chain and return the first successful text response."""
     for tier in chain:
         try:
-            return await _qa_llm_call(tier, system, user,
+            return await _qa_llm_call(tier, system, messages,
                                       max_tokens=max_tokens, timeout_secs=timeout_secs)
         except Exception as e:
             logger.warning(f"[qa] LLM tier {tier.get('provider')}/{tier.get('model')} failed: {e}")
@@ -303,7 +303,7 @@ async def _qa_llm_call_chain(system: str, user: str, chain: list[dict],
     return "LLM indisponible."
 
 
-async def _qa_llm_call(tier: dict, system: str, user: str,
+async def _qa_llm_call(tier: dict, system: str, messages: list[dict],
                        max_tokens: int = 2048, timeout_secs: int = 60) -> str:
     """Single-tier LLM call for simple chat completions (no graph parsing)."""
     provider = tier["provider"]
@@ -318,7 +318,7 @@ async def _qa_llm_call(tier: dict, system: str, user: str,
         else:
             headers["x-api-key"] = ANTHROPIC_API_KEY
         body = {"model": model, "max_tokens": max_tokens, "system": system,
-                "messages": [{"role": "user", "content": user}]}
+                "messages": messages}
         async with aiohttp.ClientSession() as s:
             async with s.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
                 if r.status != 200:
@@ -335,7 +335,7 @@ async def _qa_llm_call(tier: dict, system: str, user: str,
 
     body = {
         "model": model, "max_tokens": max_tokens,
-        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "messages": [{"role": "system", "content": system}] + messages,
     }
     async with aiohttp.ClientSession() as s:
         async with s.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
@@ -409,6 +409,10 @@ async def serve_sessions():
 @app.get("/sessions/archive", response_class=HTMLResponse)
 async def serve_archive():
     return FileResponse(os.path.join(os.path.dirname(__file__), "sessions.html"))
+
+@app.get("/marked.min.js")
+async def serve_marked():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "marked.min.js"))
 
 
 # Legacy redirects
@@ -639,7 +643,8 @@ async def session_qa(session_id: str, request: Request):
         body = await request.json()
     except Exception:
         return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
-    question = body.get("question", "").strip()
+    question = (body.get("question") or "").strip()
+    history = body.get("history", [])  # [{role, content}, ...]
     if not question:
         return JSONResponse({"error": "No question"}, status_code=400)
 
@@ -650,18 +655,21 @@ async def session_qa(session_id: str, request: Request):
     segments = await db.get_session_transcript(session_id)
     transcript = " ".join(seg.get("cleaned_text") or seg["text"] for seg in segments)[-16000:]
 
-    corpus_passages: list[dict] = []
-    if db._db is not None:
-        loaded = await corpus_module.load_corpus(db._db)
-        if loaded:
-            emb = await corpus_module.embed_text(question)
-            if emb is not None:
-                corpus_passages = corpus_module.search_corpus(emb, loaded, k=3)
-
-    user_prompt = corpus_module.build_qa_user_prompt(transcript, question, corpus_passages)
+    system = (
+        "Tu es un assistant d'analyse de session. "
+        "Réponds de façon concise aux questions basées uniquement sur le transcript fourni. "
+        "Si l'information n'est pas dans le transcript, dis-le explicitement. "
+        "Utilise la même langue que le transcript (FR ou EN)."
+    )
+    messages = [
+        {"role": "user", "content": f"Voici le transcript de la session :\n\n{transcript}"},
+        {"role": "assistant", "content": "Compris, je vais répondre à vos questions sur ce transcript."},
+        *history,
+        {"role": "user", "content": question},
+    ]
     with _llm_chain_lock:
         chain = list(_llm_chain)
-    answer = await _qa_llm_call_chain(corpus_module.QA_SYSTEM_PROMPT, user_prompt, chain)
+    answer = await _qa_llm_call_chain(system, messages, chain)
     return JSONResponse({"answer": answer})
 
 

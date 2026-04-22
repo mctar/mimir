@@ -6,6 +6,7 @@
 <title>Mímir — Sessions</title>
 <link rel="icon" type="image/svg+xml" href="/mimir-favicon.svg">
 <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+<script src="/marked.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,400&family=Ubuntu+Mono:wght@400;500&display=swap');
 
@@ -950,24 +951,74 @@ h1 {
   gap: 8px;
 }
 .qa-avatar {
-  width: 24px; height: 24px;
-  border-radius: 50%;
-  background: var(--card);
-  border: 1px solid var(--bdr);
+  width: 22px; height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
-  font-family: 'Ubuntu Mono', monospace;
-  color: var(--dim);
   flex-shrink: 0;
-  margin-top: 2px;
+  margin-top: 3px;
+}
+.qa-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 .qa-bubble--assistant {
   background: var(--panel);
   color: var(--txt);
   border: 1px solid var(--bdr);
   border-radius: 3px 14px 14px 14px;
+  white-space: normal;
+  max-width: calc(100% - 34px);
+}
+/* Markdown content resets inside assistant bubbles */
+.qa-bubble--assistant p { margin: 0.4em 0; }
+.qa-bubble--assistant p:first-child { margin-top: 0; }
+.qa-bubble--assistant p:last-child { margin-bottom: 0; }
+.qa-bubble--assistant ul,
+.qa-bubble--assistant ol {
+  padding-left: 1.4em;
+  margin: 0.4em 0;
+}
+.qa-bubble--assistant li { margin: 0.2em 0; }
+.qa-bubble--assistant h1,.qa-bubble--assistant h2,
+.qa-bubble--assistant h3,.qa-bubble--assistant h4 {
+  font-size: 0.9em;
+  font-weight: 600;
+  color: var(--txt-bright, #e8ecf4);
+  margin: 0.8em 0 0.3em;
+  letter-spacing: 0.01em;
+}
+.qa-bubble--assistant h1:first-child,
+.qa-bubble--assistant h2:first-child,
+.qa-bubble--assistant h3:first-child { margin-top: 0; }
+.qa-bubble--assistant code {
+  background: rgba(255,255,255,0.07);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.82em;
+  font-family: 'Ubuntu Mono', monospace;
+}
+.qa-bubble--assistant pre {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--bdr);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 0.5em 0;
+  overflow-x: auto;
+}
+.qa-bubble--assistant pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.8em;
+}
+.qa-bubble--assistant strong { color: var(--txt-bright, #e8ecf4); }
+.qa-bubble--assistant em { color: var(--dim); font-style: italic; }
+.qa-bubble--assistant hr {
+  border: none;
+  border-top: 1px solid var(--bdr);
+  margin: 0.6em 0;
 }
 .qa-input-bar {
   display: flex;
@@ -1144,18 +1195,12 @@ h1 {
   <!-- Q&A Tab -->
   <div id="tab-qa" class="tab-panel">
     <div class="qa-panel">
-      <div class="qa-badge-bar">
-        <span id="qa-corpus-badge" class="qa-badge">
-          <span class="qa-badge-dot"></span>Chargement…
-        </span>
-        <span class="qa-badge-hint">· RAG activé sur le transcript de cette session</span>
-      </div>
       <div class="qa-messages" id="qa-messages">
-        <div class="qa-empty">Posez une question sur cette session ou les documents du corpus.</div>
+        <div class="qa-empty">Posez une question sur cette session.</div>
       </div>
       <div class="qa-input-bar">
         <textarea id="qa-input" class="qa-textarea" rows="1"
-          placeholder="Posez une question sur cette session ou les documents du corpus…"
+          placeholder="Posez une question sur cette session…"
           oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,120)+'px'"
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendQaQuestion();}"></textarea>
         <button id="qa-send" class="btn btn-primary qa-send-btn" onclick="sendQaQuestion()">Envoyer ↵</button>
@@ -1320,53 +1365,26 @@ function switchTab(tab) {
 }
 
 // ─── Q&A Tab ─────────────────────────────────────────────────────────────────
-let _qaHistory = [];   // [{role: 'user'|'assistant', text: string}]
+let _qaHistory = [];   // [{role: 'user'|'assistant', content: string}]
 let _qaLoading = false;
-let _qaBadgeReady = false;
 
-async function initQaTab() {
-  // Reset history for the newly opened session
+function initQaTab() {
   _qaHistory = [];
   renderQaHistory();
-  // Load corpus badge only once per page session (corpus is global)
-  if (!_qaBadgeReady) {
-    await loadQaCorpusBadge();
-    _qaBadgeReady = true;
-  }
-}
-
-async function loadQaCorpusBadge() {
-  const badge = document.getElementById('qa-corpus-badge');
-  try {
-    const resp = await fetch('/v1/corpus');
-    if (!resp.ok) throw new Error('fetch failed');
-    const data = await resp.json();
-    const active = (data.docs || []).filter(d => d.active);
-    if (active.length > 0) {
-      badge.innerHTML = `<span class="qa-badge-dot"></span>${active.length} document${active.length > 1 ? 's' : ''} corpus actif${active.length > 1 ? 's' : ''}`;
-      badge.classList.add('qa-badge--active');
-    } else {
-      badge.innerHTML = `<span class="qa-badge-dot"></span>Aucun document corpus actif`;
-      badge.classList.remove('qa-badge--active');
-    }
-  } catch {
-    badge.innerHTML = `<span class="qa-badge-dot"></span>Corpus non disponible`;
-    badge.classList.remove('qa-badge--active');
-  }
 }
 
 function renderQaHistory() {
   const container = document.getElementById('qa-messages');
   if (!container) return;
   if (_qaHistory.length === 0) {
-    container.innerHTML = '<div class="qa-empty">Posez une question sur cette session ou les documents du corpus.</div>';
+    container.innerHTML = '<div class="qa-empty">Posez une question sur cette session.</div>';
     return;
   }
   container.innerHTML = _qaHistory.map(msg => {
     if (msg.role === 'user') {
-      return `<div class="qa-bubble qa-bubble--user">${escQa(msg.text)}</div>`;
+      return `<div class="qa-bubble qa-bubble--user">${escQa(msg.content)}</div>`;
     }
-    return `<div class="qa-row"><div class="qa-avatar">M</div><div class="qa-bubble qa-bubble--assistant">${escQa(msg.text)}</div></div>`;
+    return `<div class="qa-row"><div class="qa-avatar"><img src="/mimir-favicon.svg" alt="Mímir"></div><div class="qa-bubble qa-bubble--assistant">${marked.parse(msg.content)}</div></div>`;
   }).join('');
   container.scrollTop = container.scrollHeight;
 }
@@ -1387,7 +1405,7 @@ async function sendQaQuestion() {
   input.value = '';
   input.style.height = 'auto';
 
-  _qaHistory.push({ role: 'user', text: question });
+  _qaHistory.push({ role: 'user', content: question });
   _qaLoading = true;
   document.getElementById('qa-send').disabled = true;
   input.disabled = true;
@@ -1398,7 +1416,7 @@ async function sendQaQuestion() {
   const loadingRow = document.createElement('div');
   loadingRow.className = 'qa-row';
   loadingRow.id = 'qa-loading-row';
-  loadingRow.innerHTML = '<div class="qa-avatar"><span class="spinner" style="width:12px;height:12px;border-width:2px;"></span></div><div class="qa-bubble qa-bubble--assistant" style="color:var(--dim);">…</div>';
+  loadingRow.innerHTML = '<div class="qa-avatar"><img src="/mimir-favicon.svg" alt="Mímir"></div><div class="qa-bubble qa-bubble--assistant" style="color:var(--dim);">…</div>';
   container.appendChild(loadingRow);
   container.scrollTop = container.scrollHeight;
 
@@ -1406,12 +1424,12 @@ async function sendQaQuestion() {
     const resp = await fetch(`/v1/sessions/${sessionId}/qa`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question }),
+      body: JSON.stringify({ question, history: _qaHistory.slice(0, -1) }),
     });
     const data = await resp.json();
-    _qaHistory.push({ role: 'assistant', text: data.error ? `Erreur : ${data.error}` : (data.answer || '') });
+    _qaHistory.push({ role: 'assistant', content: data.error ? `Erreur : ${data.error}` : (data.answer || '') });
   } catch {
-    _qaHistory.push({ role: 'assistant', text: "Impossible d'obtenir une réponse." });
+    _qaHistory.push({ role: 'assistant', content: "Impossible d'obtenir une réponse." });
   } finally {
     _qaLoading = false;
     document.getElementById('qa-send').disabled = false;
