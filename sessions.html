@@ -1533,18 +1533,26 @@ function renderQaCorpusList() {
 
   list.innerHTML = [..._qaDocsBySource.entries()].map(([src, doc]) => {
     const excluded = _qaExcludedSources.has(src);
-    return `<label class="qa-corpus-item${excluded ? ' excluded' : ''}">
-      <input type="checkbox" ${excluded ? '' : 'checked'} onchange="toggleQaDoc(${JSON.stringify(src)}, this.checked)">
+    return `<label class="qa-corpus-item${excluded ? ' excluded' : ''}" data-src="${escQa(src)}">
+      <input type="checkbox" ${excluded ? '' : 'checked'} onchange="toggleQaDoc(this.closest('label').dataset.src, this.checked, this)">
       ${escQa(doc.label)}
     </label>`;
   }).join('');
 }
 
-function toggleQaDoc(src, included) {
+function toggleQaDoc(src, included, checkbox) {
   if (included) _qaExcludedSources.delete(src);
   else _qaExcludedSources.add(src);
   localStorage.setItem('qa_corpus_excluded_sources', JSON.stringify([..._qaExcludedSources]));
-  renderQaCorpusList();
+  // Update the toggled item's visual state without full re-render
+  if (checkbox) checkbox.closest('label')?.classList.toggle('excluded', !included);
+  // Update badge count
+  const badge = document.getElementById('qa-corpus-badge');
+  if (badge) {
+    const total = _qaDocsBySource.size;
+    const n = [..._qaDocsBySource.keys()].filter(s => !_qaExcludedSources.has(s)).length;
+    badge.textContent = `${n} / ${total} document(s) inclus`;
+  }
 }
 
 function toggleQaCorpusPanel() {
