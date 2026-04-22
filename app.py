@@ -320,7 +320,7 @@ async def _qa_llm_call(tier: dict, system: str, user: str) -> str:
         body = {"model": model, "max_tokens": 2048, "system": system,
                 "messages": [{"role": "user", "content": user}]}
         async with aiohttp.ClientSession() as s:
-            async with s.post(url, headers=headers, json=body, timeout=timeout) as r:
+            async with s.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
                 if r.status != 200:
                     raise RuntimeError(f"Anthropic API error {r.status}: {await r.text()}")
                 data = await r.json()
@@ -338,7 +338,7 @@ async def _qa_llm_call(tier: dict, system: str, user: str) -> str:
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
     }
     async with aiohttp.ClientSession() as s:
-        async with s.post(url, headers=headers, json=body, timeout=timeout) as r:
+        async with s.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
             if r.status != 200:
                 raise RuntimeError(f"{provider} API error {r.status}: {await r.text()}")
             data = await r.json()
