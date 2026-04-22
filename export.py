@@ -418,7 +418,7 @@ Output ONLY the complete HTML. Nothing else."""
         except Exception as e:
             dt = __import__("time").time() - t0
             print(f"  {provider}/{model}: FAILED after {dt:.1f}s — {e}", file=sys.stderr)
-            logging.warning("export_slides: tier %s/%s failed: %s", provider, model, e)
+            logger.warning("export_slides: tier %s/%s failed: %s", provider, model, e)
             last_error = e
 
     if not html_text:
