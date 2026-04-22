@@ -1037,10 +1037,32 @@ h1 {
   line-height: 1;
   padding: 2px 4px;
   transition: color 0.15s, border-color 0.15s;
+  z-index: 1;
 }
 .qa-copy-btn:hover {
   color: var(--txt);
   border-color: var(--txt);
+}
+.qa-copy-btn::after {
+  content: 'Copier';
+  position: absolute;
+  bottom: calc(100% + 6px);
+  right: 0;
+  background: var(--panel);
+  border: 1px solid var(--bdr);
+  border-radius: 4px;
+  color: var(--txt);
+  font-size: 11px;
+  padding: 3px 7px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.15s, transform 0.15s;
+}
+.qa-copy-btn:hover::after {
+  opacity: 1;
+  transform: translateY(0);
 }
 .qa-input-bar {
   display: flex;
