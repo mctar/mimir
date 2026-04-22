@@ -41,7 +41,7 @@ RULES (non-negotiable):
 - The deck must be fully self-contained: no external URLs, no CDN links.
 - Navigation: left/right arrow keys and space bar advance slides.
 - Use CSS transitions between slides (fade or horizontal slide).
-- Style: dark, modern, bold. Background: #0a0a0f. Accent: #7c3aed.
+- Style: dark, modern, bold. Background: #0a0a0f. Accent: #0058AB.
 - Typography: system fonts only (-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif).
 - Large text, high contrast, minimal clutter — legible from the back of a room.
 - Slide structure: title, overview/pitch, key points (1 per slide), concepts map,
@@ -302,7 +302,7 @@ async def _llm_call_slides(tier: dict, system: str, user: str) -> str:
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
     }
     async with aiohttp.ClientSession() as s:
-        async with s.post(url, headers=headers, json=body, timeout=timeout) as r:
+        async with s.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
             if r.status != 200:
                 raise RuntimeError(f"{provider} error {r.status}: {await r.text()}")
             data = await r.json()
