@@ -10,7 +10,6 @@ Idempotent: skips already-ingested content (SHA-256 hash check).
 import argparse, asyncio, sys
 from pathlib import Path
 
-import numpy as np
 import aiosqlite
 import corpus
 from log import logger
@@ -74,12 +73,9 @@ async def ingest_file(db: aiosqlite.Connection, path: Path, chunk_size: int, ove
     chunks = chunk_text(text, chunk_size, overlap)
     stored, skipped = 0, 0
     for i, chunk in enumerate(chunks):
-        emb = await corpus.embed_text(chunk)
-        if emb is None:
-            emb = np.zeros(corpus.EMBED_DIM, dtype=np.float32)
         title = f"{path.stem} [{i+1}/{len(chunks)}]"
         try:
-            await corpus.store_doc(db, title, path.name, chunk, emb)
+            await corpus.store_doc(db, title, path.name, chunk)
             stored += 1
         except Exception as e:
             if "UNIQUE constraint" in str(e):
@@ -111,7 +107,7 @@ async def main():
             CREATE TABLE IF NOT EXISTS corpus_docs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,
                 source TEXT, content TEXT NOT NULL,
-                content_hash TEXT NOT NULL UNIQUE, embedding BLOB NOT NULL,
+                content_hash TEXT NOT NULL UNIQUE,
                 created_at REAL NOT NULL, active INTEGER NOT NULL DEFAULT 1
             )
         """)

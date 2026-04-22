@@ -14,7 +14,6 @@ async def tmp_db(tmp_path):
                 source       TEXT,
                 content      TEXT NOT NULL,
                 content_hash TEXT NOT NULL UNIQUE,
-                embedding    BLOB NOT NULL,
                 created_at   REAL NOT NULL,
                 active       INTEGER NOT NULL DEFAULT 1
             )

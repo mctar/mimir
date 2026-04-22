@@ -63,7 +63,6 @@ async def init_db(path: str = DB_PATH):
             source       TEXT,
             content      TEXT NOT NULL,
             content_hash TEXT NOT NULL UNIQUE,
-            embedding    BLOB NOT NULL,
             created_at   REAL NOT NULL,
             active       INTEGER NOT NULL DEFAULT 1
         );
@@ -98,6 +97,28 @@ async def init_db(path: str = DB_PATH):
     corpus_cols = {row[1] for row in await cursor.fetchall()}
     if "active" not in corpus_cols:
         await _db.execute("ALTER TABLE corpus_docs ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
+
+    # Drop embedding column from corpus_docs if present (embeddings no longer used)
+    cursor = await _db.execute("PRAGMA table_info(corpus_docs)")
+    corpus_cols = {row[1] for row in await cursor.fetchall()}
+    if "embedding" in corpus_cols:
+        await _db.executescript("""
+            ALTER TABLE corpus_docs RENAME TO corpus_docs_old;
+            CREATE TABLE corpus_docs (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                title        TEXT NOT NULL,
+                source       TEXT,
+                content      TEXT NOT NULL,
+                content_hash TEXT NOT NULL UNIQUE,
+                created_at   REAL NOT NULL,
+                active       INTEGER NOT NULL DEFAULT 1
+            );
+            INSERT INTO corpus_docs (id, title, source, content, content_hash, created_at, active)
+                SELECT id, title, source, content, content_hash, created_at, active
+                FROM corpus_docs_old;
+            DROP TABLE corpus_docs_old;
+        """)
+        await _db.commit()
 
     # Cross-session synthesis recaps table
     await _db.execute("""
