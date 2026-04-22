@@ -1404,7 +1404,7 @@ function renderQaHistory() {
     if (msg.role === 'user') {
       return `<div class="qa-bubble qa-bubble--user">${escQa(msg.content)}</div>`;
     }
-    return `<div class="qa-row"><div class="qa-avatar"><img src="/mimir-favicon.svg" alt="Mímir"></div><div class="qa-bubble qa-bubble--assistant">${marked.parse(msg.content)}</div></div>`;
+    return `<div class="qa-row"><div class="qa-avatar"><img src="/mimir-favicon.svg" alt="Mímir"></div><div class="qa-bubble qa-bubble--assistant">${marked.parse(msg.content)}</div></div><div class="qa-actions"><button class="qa-copy-btn" onclick="copyQaBubble(this)">⎘ Copier</button></div>`;
   }).join('');
   container.scrollTop = container.scrollHeight;
 }
