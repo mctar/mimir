@@ -640,6 +640,36 @@ async def get_session_snapshots_endpoint(session_id: str):
     })
 
 
+# ─── Q&A ─────────────────────────────────────────────────────────────────────
+
+@app.post("/v1/sessions/{session_id}/qa")
+async def session_qa(session_id: str, request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+    question = body.get("question", "").strip()
+    if not question:
+        return JSONResponse({"error": "No question"}, status_code=400)
+
+    segments = await db.get_session_transcript(session_id)
+    transcript = " ".join(s["text"] for s in segments if s.get("text"))[-16000:]
+
+    corpus_passages: list[dict] = []
+    if db._db is not None:
+        loaded = await corpus_module.load_corpus(db._db)
+        if loaded:
+            emb = await corpus_module.embed_text(question)
+            if emb is not None:
+                corpus_passages = corpus_module.search_corpus(emb, loaded, k=3)
+
+    user_prompt = corpus_module.build_qa_user_prompt(transcript, question, corpus_passages)
+    with _llm_chain_lock:
+        chain = list(_llm_chain)
+    answer = await _qa_llm_call_chain(corpus_module.QA_SYSTEM_PROMPT, user_prompt, chain)
+    return JSONResponse({"answer": answer})
+
+
 _export_tasks: dict[str, dict] = {}  # session_id -> {task, status, path, error}
 
 @app.post("/v1/sessions/{session_id}/export/{fmt}")
