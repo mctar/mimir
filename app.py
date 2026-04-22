@@ -265,6 +265,38 @@ reconciler = GraphReconciler()
 _current_session_id: str | None = None
 _summary: str = ""
 
+# ─── Live slides state ───────────────────────────────────────────────────────
+SLIDE_TEMPLATE: list[dict] = [
+    # Positioning
+    {"id": "pos_what_sell", "section": "Positioning",       "title": "What we sell?"},
+    {"id": "pos_why_now",   "section": "Positioning",       "title": "Why now?"},
+    {"id": "pos_why_us",    "section": "Positioning",       "title": "Why are we well positioned?"},
+    {"id": "pos_to_whom",   "section": "Positioning",       "title": "To Whom?"},
+    {"id": "pos_statement", "section": "Positioning",       "title": "Position statement"},
+    # Value Proposition
+    {"id": "val_what_do",   "section": "Value Proposition", "title": "What we do?"},
+    {"id": "val_how",       "section": "Value Proposition", "title": "How we do it?"},
+    {"id": "val_paid",      "section": "Value Proposition", "title": "What do we get paid?"},
+    {"id": "val_scope",     "section": "Value Proposition", "title": "Scope, boundaries & non-goals"},
+    # Day 2 & Day 3
+    {"id": "d2_targets",    "section": "Day 2 & Day 3",     "title": "Targets and horizon"},
+    {"id": "d2_priorities", "section": "Day 2 & Day 3",     "title": "Priorities and orchestration"},
+]
+
+_slides: dict[str, dict] = {
+    s["id"]: {**s, "bullets": [], "key_quote": None, "updated_at": None}
+    for s in SLIDE_TEMPLATE
+}
+
+
+def _reset_slides() -> None:
+    """Clear all slide content (called on session reset)."""
+    for s in SLIDE_TEMPLATE:
+        _slides[s["id"]]["bullets"] = []
+        _slides[s["id"]]["key_quote"] = None
+        _slides[s["id"]]["updated_at"] = None
+
+
 # Monotonic session-generation counter. Bumped every time /v1/sessions/new or
 # /v1/sessions/{id}/end resets state. In-flight _proxy_claude tasks capture it
 # at request time; if it has changed by the time the LLM call returns, the
@@ -582,6 +614,7 @@ async def new_session(request: Request):
     reconciler.edges.clear()
     reconciler._mention_log.clear()
     reconciler._churn_log.clear()
+    _reset_slides()
     _summary = ""
     with _seq_lock:
         _seq_counter = 0
@@ -613,6 +646,7 @@ async def new_session(request: Request):
     reconciler.edges.clear()
     reconciler._mention_log.clear()
     reconciler._churn_log.clear()
+    _reset_slides()
     # Notify all connected frontends
     msg = json.dumps({"type": "session_reset", "session_id": session_id, "topic": topic})
     for ws in list(connected_clients):
