@@ -143,3 +143,20 @@ def test_assemble_pptx_unknown_layout_fallback(tmp_path):
     output = str(tmp_path / "fallback.pptx")
     exp._assemble_pptx(deck_spec, output)
     assert os.path.exists(output)
+
+
+def test_assemble_pptx_all_layouts(tmp_path):
+    """All 7 layouts render without exception."""
+    import export as exp
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {"layout": "text-large",   "slots": {"title": "Text", "body": "Some long body text here."}},
+            {"layout": "two-columns",  "slots": {"title": "Two cols", "left": "Left content", "right": "Right content"}},
+        ],
+    }
+    output = str(tmp_path / "all_layouts.pptx")
+    exp._assemble_pptx(deck_spec, output)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 1000

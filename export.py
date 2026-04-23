@@ -583,7 +583,10 @@ def _assemble_pptx(deck_spec: dict, output: str) -> None:
 
         elif layout_name == "bullets":
             slide.placeholders[0].text = slots.get("title", "")
-            _fill_bullets(slide.placeholders[22], slots.get("bullets", []))
+            items = slots.get("bullets", [])
+            if isinstance(items, str):
+                items = [items]
+            _fill_bullets(slide.placeholders[22], items)
 
         elif layout_name == "three-columns":
             slide.placeholders[0].text = slots.get("title", "")
@@ -613,7 +616,7 @@ def _assemble_pptx(deck_spec: dict, output: str) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
     prs.save(output)
     size_kb = os.path.getsize(output) / 1024
-    print(f"PPTX saved: {output} ({size_kb:.0f} KB)")
+    logger.info(f"PPTX saved: {output} ({size_kb:.0f} KB)")
 
 
 async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"):
