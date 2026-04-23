@@ -6,6 +6,7 @@ dispatches to STT, proxies LLM calls, manages graph reconciliation.
 """
 
 import asyncio, json, time, threading, queue, argparse, os, uuid, base64
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
 import numpy as np
@@ -73,6 +74,10 @@ def _default_chain() -> list[dict]:
 _llm_chain: list[dict] = _default_chain()
 _llm_chain_lock = threading.Lock()
 _last_serving_provider: str = ""
+
+# STT concurrency control: dedicated thread pool + semaphore to cap parallel requests
+_stt_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="stt-worker")
+_stt_semaphore: asyncio.Semaphore | None = None  # initialized in lifespan
 
 
 def _hugin_headers() -> dict:
@@ -483,6 +488,8 @@ async def lifespan(app: FastAPI):
             except Exception:
                 pass
 
+    global _stt_semaphore
+    _stt_semaphore = asyncio.Semaphore(3)
     asyncio.create_task(broadcast_loop())
     asyncio.create_task(snapshot_loop())
     logger.info("Server ready — audio arrives from browser via WebSocket")
@@ -2319,16 +2326,17 @@ async def _proxy_claude(websocket: WebSocket, req: dict):
 # ─── Audio chunk handler ───
 async def _handle_audio_chunk(audio_arr: np.ndarray, source_rate: int):
     """Process an audio chunk from the browser: STT → store segment → broadcast."""
-    loop = asyncio.get_event_loop()
-    try:
-        result = await loop.run_in_executor(
-            None,
-            stt_worker.transcribe_audio_chunk,
-            audio_arr, source_rate, metrics, metrics_lock,
-        )
-    except Exception as e:
-        logger.error(f"STT error: {e}")
-        return
+    async with _stt_semaphore:
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(
+                _stt_executor,
+                stt_worker.transcribe_audio_chunk,
+                audio_arr, source_rate, metrics, metrics_lock,
+            )
+        except Exception as e:
+            logger.error(f"STT error: {e}")
+            return
 
     if result:
         seq = _next_seq()

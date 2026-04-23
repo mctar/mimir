@@ -84,7 +84,7 @@ def _get_context() -> str:
 def _is_duplicate(text: str) -> bool:
     """Check if this is a duplicate of the previous result."""
     now = time.time()
-    if text == _prev_result["text"] and (now - _prev_result["time"]) < 10.0:
+    if text == _prev_result["text"] and (now - _prev_result["time"]) < 4.0:
         logger.debug(f"[Filter] duplicate dropped: '{text[:60]}'")
         return True
     _prev_result["text"] = text
