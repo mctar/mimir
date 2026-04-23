@@ -316,7 +316,12 @@ async def store_cleaned_segments(session_id: str, cleaned: list[dict]):
 async def store_recap(session_id: str, recap: dict, model: str = ""):
     """Store a generated recap (replaces any existing)."""
     await _db.execute(
-        "INSERT OR REPLACE INTO recaps (session_id, recap_json, model, created_at) VALUES (?, ?, ?, ?)",
+        "INSERT INTO recaps (session_id, recap_json, model, created_at)"
+        " VALUES (?, ?, ?, ?)"
+        " ON CONFLICT(session_id) DO UPDATE SET"
+        "   recap_json = excluded.recap_json,"
+        "   model      = excluded.model,"
+        "   created_at = excluded.created_at",
         (session_id, json.dumps(recap), model, time.time()),
     )
     await _db.commit()
@@ -367,11 +372,10 @@ async def save_pptx_instructions(session_id: str, instructions: str) -> None:
 
 async def save_deck_spec(session_id: str, deck_spec: dict, model: str) -> None:
     """Persist deck_spec and generation metadata for a session."""
-    import time as _time
     await _db.execute(
         "UPDATE recaps SET deck_spec_json = ?, deck_spec_model = ?, deck_spec_at = ? "
         "WHERE session_id = ?",
-        (json.dumps(deck_spec), model, _time.time(), session_id),
+        (json.dumps(deck_spec), model, time.time(), session_id),
     )
     await _db.commit()
 

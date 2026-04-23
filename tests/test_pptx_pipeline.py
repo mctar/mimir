@@ -85,3 +85,26 @@ def test_save_and_get_deck_spec(tmp_db):
     assert result["deck_spec"]["schema_version"] == 1
     assert result["deck_spec"]["slides"][0]["layout"] == "cover"
     assert result["deck_spec_model"] == "gemini-2.5-flash"
+
+
+def test_pptx_instructions_survive_recap_regeneration(tmp_db):
+    """store_recap does not wipe pptx_instructions (UPSERT behaviour)."""
+    sid = "test-session-003"
+
+    async def setup():
+        await db._db.execute(
+            "INSERT INTO sessions (id, topic, created_at) VALUES (?, ?, ?)",
+            (sid, "Test", 1000.0),
+        )
+        await db._db.commit()
+
+    asyncio.run(setup())
+    # First recap
+    asyncio.run(db.store_recap(sid, {"elevator_pitch": "v1"}, "model-a"))
+    # Save pptx instructions
+    asyncio.run(db.save_pptx_instructions(sid, "Traduire en anglais"))
+    # Regenerate recap (simulates user clicking "Regenerate Recap")
+    asyncio.run(db.store_recap(sid, {"elevator_pitch": "v2"}, "model-b"))
+    # pptx_instructions must survive
+    result = asyncio.run(db.get_pptx_data(sid))
+    assert result["instructions"] == "Traduire en anglais"
