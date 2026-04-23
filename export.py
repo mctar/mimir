@@ -507,6 +507,83 @@ def _fmt_recap_items(value) -> list[str]:
     return [s for s in result if s]
 
 
+_CARDS_HEADING_MARKER = "Lorem ipsum dolor"
+_CARDS_CONTENT_MARKER = "Aenean vulputate"
+
+
+def _fill_cards_shapes(slide, cards: list[dict]) -> None:
+    """Replace heading/content placeholder text in a copied cards slide.
+
+    Identifies shapes by their placeholder text (Lorem ipsum → heading,
+    Aenean vulputate → content), sorts by vertical then horizontal position,
+    and fills them in order from the cards list.
+    """
+    headings = []
+    contents = []
+    for shape in slide.shapes:
+        if not shape.has_text_frame:
+            continue
+        txt = shape.text_frame.text
+        if _CARDS_HEADING_MARKER in txt:
+            headings.append(shape)
+        elif _CARDS_CONTENT_MARKER in txt:
+            contents.append(shape)
+
+    headings.sort(key=lambda s: (s.top, s.left))
+    contents.sort(key=lambda s: (s.top, s.left))
+
+    for i, card in enumerate(cards):
+        if i < len(headings):
+            headings[i].text_frame.text = card.get("heading", "")
+        if i < len(contents):
+            contents[i].text_frame.text = card.get("content", "")
+
+
+def _copy_slide_from_template(
+    prs,
+    tmpl,
+    slide_idx: int,
+    title: str,
+    cards: list[dict],
+) -> None:
+    """Add a slide to prs by copying slide[slide_idx] from tmpl, then filling content.
+
+    Args:
+        prs: target Presentation (being assembled)
+        tmpl: source Presentation (template loaded separately)
+        slide_idx: 0-based index of the template slide to copy
+        title: slide title text
+        cards: list of {"heading": str, "content": str} dicts
+    """
+    import copy as _copy
+
+    src = tmpl.slides[slide_idx]
+
+    # Find matching layout in prs by name
+    src_layout_name = src.slide_layout.name
+    matching_layout = next(
+        (l for l in prs.slide_layouts if l.name == src_layout_name),
+        prs.slide_layouts[35],
+    )
+    new_slide = prs.slides.add_slide(matching_layout)
+
+    # Replace the slide's spTree with the template slide's spTree
+    sp_tree = new_slide.shapes._spTree
+    for child in list(sp_tree):
+        sp_tree.remove(child)
+    for child in src.shapes._spTree:
+        sp_tree.append(_copy.deepcopy(child))
+
+    # Update title
+    try:
+        new_slide.placeholders[0].text = title
+    except (KeyError, IndexError):
+        logger.warning(f"_copy_slide_from_template: placeholder[0] not found in slide {slide_idx}")
+
+    # Fill cards content
+    _fill_cards_shapes(new_slide, cards)
+
+
 # ─── Layout catalogue (exposed to LLM) ───────────────────────────────────────
 
 LAYOUT_CATALOG = {
@@ -545,6 +622,30 @@ LAYOUT_CATALOG = {
         "slots": "title (str), terms (list[str]), edges (list[str])",
         "layout_idx": 48,
     },
+    "cards-3": {
+        "description": "3 cartes structurées côte à côte (heading + contenu)",
+        "slots": 'title (str), cards (list of {"heading": str, "content": str}, exactly 3 items)',
+        "layout_idx": 35,
+        "slide_copy_idx": 8,   # slide 9 du template, 0-indexé
+    },
+    "cards-4": {
+        "description": "4 cartes structurées (heading + contenu)",
+        "slots": 'title (str), cards (list of {"heading": str, "content": str}, exactly 4 items)',
+        "layout_idx": 35,
+        "slide_copy_idx": 9,   # slide 10 du template
+    },
+    "cards-5": {
+        "description": "5 cartes structurées (heading + contenu)",
+        "slots": 'title (str), cards (list of {"heading": str, "content": str}, exactly 5 items)',
+        "layout_idx": 35,
+        "slide_copy_idx": 10,  # slide 11 du template
+    },
+    "cards-4-rounded": {
+        "description": "4 cartes style arrondi (heading + contenu, variante visuelle)",
+        "slots": 'title (str), cards (list of {"heading": str, "content": str}, exactly 4 items)',
+        "layout_idx": 35,
+        "slide_copy_idx": 11,  # slide 12 du template
+    },
 }
 
 _LAYOUT_CATALOG_STR = "\n".join(
@@ -559,6 +660,9 @@ def _assemble_pptx(deck_spec: dict, output: str) -> None:
 
     prs = Presentation(PPTX_TEMPLATE)
 
+    _COPY_SLIDE_LAYOUTS = {"cards-3", "cards-4", "cards-5", "cards-4-rounded"}
+    tmpl = Presentation(PPTX_TEMPLATE)  # source for copy-slide layouts
+
     for slide_def in deck_spec.get("slides", []):
         layout_name = slide_def.get("layout", "bullets")
         slots = slide_def.get("slots", {})
@@ -568,6 +672,19 @@ def _assemble_pptx(deck_spec: dict, output: str) -> None:
             logger.warning(f"_assemble_pptx: unknown layout '{layout_name}', falling back to 'bullets'")
             layout_name = "bullets"
 
+        # Copy-slide layouts: copy entire slide from template, fill content
+        if layout_name in _COPY_SLIDE_LAYOUTS:
+            slide_copy_idx = LAYOUT_CATALOG[layout_name]["slide_copy_idx"]
+            _copy_slide_from_template(
+                prs,
+                tmpl,
+                slide_idx=slide_copy_idx,
+                title=slots.get("title", ""),
+                cards=slots.get("cards", []),
+            )
+            continue
+
+        # Layout-based slides: add new slide from layout
         layout_idx = LAYOUT_CATALOG[layout_name]["layout_idx"]
         slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
 
@@ -629,6 +746,9 @@ CATALOGUE DE LAYOUTS DISPONIBLES :
 RÈGLES :
 - Choisis le layout le plus approprié au contenu de chaque slide.
 - Pour "bullets" : max 6 items, max 15 mots par item.
+- Pour les contenus pouvant être découpés en éléments parallèles (catégories, thèmes, acteurs, étapes, dimensions) : utilise "cards-3", "cards-4", "cards-5" ou "cards-4-rounded" en priorité plutôt que "bullets" ou "three-columns".
+  Choisis le nombre selon la richesse du contenu (3 = synthèse, 4-5 = détail).
+  "cards-4-rounded" est une variante visuelle de "cards-4" : varie les deux pour éviter la répétition.
 - Si un DECK ACTUEL est fourni, applique les INSTRUCTIONS en le modifiant
   (ne recrée pas de zéro sauf si explicitement demandé).
 - Max 15 slides. Si le contenu dépasse, priorise et condense.
