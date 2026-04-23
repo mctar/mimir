@@ -470,6 +470,150 @@ Output ONLY the complete HTML. Nothing else."""
     print(f"Slides saved: {output} ({size_kb:.0f} KB)")
 
 
+# ─── PPTX Export ───
+
+PPTX_TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "template_cap_blank.pptx")
+
+
+def _fill_bullets(placeholder, items: list[str]) -> None:
+    """Fill a text placeholder with bullet items."""
+    tf = placeholder.text_frame
+    tf.clear()
+    if not items:
+        return
+    tf.text = items[0]
+    for item in items[1:]:
+        p = tf.add_paragraph()
+        p.text = item
+
+
+def _fmt_recap_items(value) -> list[str]:
+    """Flatten recap list items (dicts or strings) to plain strings."""
+    if not isinstance(value, list):
+        return [str(value)] if value else []
+    result = []
+    for item in value:
+        if isinstance(item, dict):
+            topics = item.get("topics", "")
+            insight = item.get("insight", "")
+            if topics and insight:
+                result.append(f"{topics} : {insight}")
+            else:
+                result.append(topics or insight or str(item))
+        else:
+            result.append(str(item))
+    return [s for s in result if s]
+
+
+async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"):
+    """Generate an editable PPTX slide deck from a session recap using the CAP template."""
+    from pptx import Presentation
+
+    if not db._db:
+        await db.init_db(db_path)
+
+    sessions = await db.list_sessions()
+    session = next((s for s in sessions if s["id"] == session_id), None)
+    if not session:
+        sessions = await db.list_sessions(archived=True)
+        session = next((s for s in sessions if s["id"] == session_id), None)
+    if not session:
+        raise ValueError(f"Session '{session_id}' not found.")
+
+    recap_data = await db.get_recap(session_id)
+    if not recap_data or not recap_data.get("recap"):
+        raise ValueError(f"Session '{session_id}' has no recap. Generate one first.")
+    recap = recap_data["recap"]
+
+    # Peak graph nodes + edges
+    active_nodes: list[str] = []
+    edges: list[str] = []
+    snapshots = await db.get_session_snapshots(session_id)
+    if snapshots:
+        peak = find_peak_snapshot(snapshots)
+        nodes = peak["graph"].get("nodes", {})
+        active_nodes = [n.get("label", n.get("id", "?")) for n in nodes.values() if n.get("state") == "active"]
+        edges = [
+            f"{e.get('source', '?')} → {e.get('target', '?')}"
+            for e in peak["graph"].get("edges", [])[:15]
+        ]
+
+    topic = session.get("topic", "Untitled")
+    date_str = format_date(session.get("created_at", 0))
+    duration = ""
+    if session.get("ended_at") and session.get("created_at"):
+        duration = format_duration(session["ended_at"] - session["created_at"])
+
+    prs = Presentation(PPTX_TEMPLATE)  # template_cap_blank.pptx — no slides, no orphaned parts
+
+    # 1. Cover
+    cover = prs.slides.add_slide(prs.slide_layouts[0])
+    cover.placeholders[0].text = topic
+    cover.placeholders[10].text = date_str
+    if duration:
+        cover.placeholders[11].text = duration
+
+    # 2. Pitch
+    pitch = recap.get("elevator_pitch", "")
+    if pitch:
+        slide = prs.slides.add_slide(prs.slide_layouts[21])
+        slide.placeholders[0].text = "Pitch"
+        slide.placeholders[22].text = pitch
+
+    # 3. Résumé
+    summary = recap.get("summary", "")
+    if summary:
+        slide = prs.slides.add_slide(prs.slide_layouts[21])
+        slide.placeholders[0].text = "Résumé"
+        slide.placeholders[22].text = summary
+
+    # 4. Points clés
+    takeaways = _fmt_recap_items(recap.get("key_takeaways", []))
+    if takeaways:
+        slide = prs.slides.add_slide(prs.slide_layouts[21])
+        slide.placeholders[0].text = "Points clés"
+        _fill_bullets(slide.placeholders[22], takeaways)
+
+    # 5. Connexions non-évidentes
+    connections = _fmt_recap_items(recap.get("non_obvious_connections", []))
+    if connections:
+        if len(connections) <= 3:
+            slide = prs.slides.add_slide(prs.slide_layouts[35])
+            slide.placeholders[0].text = "Connexions non-évidentes"
+            for ph_idx, conn in zip([22, 35, 36], connections):
+                slide.placeholders[ph_idx].text = conn
+        else:
+            slide = prs.slides.add_slide(prs.slide_layouts[21])
+            slide.placeholders[0].text = "Connexions non-évidentes"
+            _fill_bullets(slide.placeholders[22], connections)
+
+    # 6. Tensions & contradictions
+    tensions = _fmt_recap_items(recap.get("contradictions", []))
+    if tensions:
+        slide = prs.slides.add_slide(prs.slide_layouts[21])
+        slide.placeholders[0].text = "Tensions & contradictions"
+        _fill_bullets(slide.placeholders[22], tensions)
+
+    # 7. Concepts actifs
+    if active_nodes:
+        slide = prs.slides.add_slide(prs.slide_layouts[48])
+        slide.placeholders[0].text = "Concepts actifs"
+        tf = slide.placeholders[13].text_frame
+        tf.clear()
+        tf.text = ", ".join(active_nodes[:24])
+        if edges:
+            tf.add_paragraph().text = ""
+            p = tf.add_paragraph()
+            p.text = "Relations :"
+            for edge in edges[:10]:
+                tf.add_paragraph().text = f"  {edge}"
+
+    os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
+    prs.save(output)
+    size_kb = os.path.getsize(output) / 1024
+    print(f"PPTX saved: {output} ({size_kb:.0f} KB)")
+
+
 # ─── CLI ───
 
 def main():

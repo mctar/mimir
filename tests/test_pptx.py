@@ -25,8 +25,12 @@ def _generate_pptx(themes: list[dict]) -> Presentation:
     prs = Presentation(TEMPLATE_PATH)
 
     # Remove all template slides, keeping only the layouts/theme
+    _NS_R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
     sldIdLst = prs.slides._sldIdLst
     for sldId in list(sldIdLst):
+        rId = sldId.get(f"{{{_NS_R}}}id")
+        if rId:
+            prs.part.drop_rel(rId)
         sldIdLst.remove(sldId)
 
     cover = prs.slides.add_slide(prs.slide_layouts[21])

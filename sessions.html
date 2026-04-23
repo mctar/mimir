@@ -1257,6 +1257,7 @@ h1 {
       <button class="btn btn-ghost" onclick="generateRecap()" id="btn-regenerate">Regenerate Recap</button>
       <button class="btn btn-ghost" onclick="exportPdf()">Export PDF</button>
       <button class="btn btn-ghost" onclick="exportGraph('slides')">Export Slides</button>
+      <button class="btn btn-ghost" onclick="exportGraph('pptx')">Export PPTX</button>
       <button class="btn btn-ghost" onclick="copyMarkdown()">Copy Markdown</button>
       <button class="btn btn-ghost" onclick="downloadMarkdown()">Download .md</button>
       <span id="recap-edited-badge" class="recap-edited-badge" style="display:none;">✎ EDITED</span>
@@ -2461,6 +2462,7 @@ function renderMindMap() {
     <button class="btn btn-ghost" onclick="exportGraph('pdf')">Export PDF</button>
     <button class="btn btn-ghost" onclick="exportGraph('video')">Export Video</button>
     ${current && current.session.has_recap ? `<button class="btn btn-ghost" onclick="exportGraph('slides')">Export Slides</button>` : ''}
+    ${current && current.session.has_recap ? `<button class="btn btn-ghost" onclick="exportGraph('pptx')">Export PPTX</button>` : ''}
   `;
   wrap.appendChild(exportBar);
 
@@ -2908,7 +2910,7 @@ async function exportGraph(fmt) {
   const origText = btn.textContent;
 
   btn.classList.add('exporting');
-  const fmtLabels = {pdf: 'Generating PDF...', video: 'Rendering video...', slides: 'Generating slides...'};
+  const fmtLabels = {pdf: 'Generating PDF...', video: 'Rendering video...', slides: 'Generating slides...', pptx: 'Generating PPTX...'};
   btn.textContent = fmtLabels[fmt] || `Exporting ${fmt}...`;
   toast(`Starting ${fmt.toUpperCase()} export...`);
 
@@ -2936,7 +2938,7 @@ async function exportGraph(fmt) {
     if (status === 'done') {
       const a = document.createElement('a');
       a.href = `/v1/sessions/${sid}/export/${fmt}/download`;
-      const fmtExt = {pdf: 'pdf', video: 'mp4', slides: 'html'};
+      const fmtExt = {pdf: 'pdf', video: 'mp4', slides: 'html', pptx: 'pptx'};
       a.download = `mimir-${sid}.${fmtExt[fmt] || fmt}`;
       document.body.appendChild(a);
       a.click();

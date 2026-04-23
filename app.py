@@ -873,10 +873,10 @@ _export_tasks: dict[str, dict] = {}  # session_id -> {task, status, path, error}
 @app.post("/v1/sessions/{session_id}/export/{fmt}")
 async def start_export(session_id: str, fmt: str, request: Request):
     """Start a PDF, video, or HTML slides export. Returns immediately; poll status endpoint."""
-    if fmt not in ("pdf", "video", "slides"):
-        return JSONResponse({"error": "Format must be 'pdf', 'video', or 'slides'"}, status_code=400)
+    if fmt not in ("pdf", "video", "slides", "pptx"):
+        return JSONResponse({"error": "Format must be 'pdf', 'video', 'slides', or 'pptx'"}, status_code=400)
 
-    if fmt == "slides":
+    if fmt in ("slides", "pptx"):
         recap = await db.get_recap(session_id)
         if not recap or not recap.get("recap"):
             return JSONResponse({"error": "No recap found. Generate a recap first."}, status_code=400)
@@ -892,14 +892,14 @@ async def start_export(session_id: str, fmt: str, request: Request):
         pass
 
     import tempfile
-    ext = {"pdf": "pdf", "video": "mp4", "slides": "html"}[fmt]
+    ext = {"pdf": "pdf", "video": "mp4", "slides": "html", "pptx": "pptx"}[fmt]
     outfile = os.path.join(tempfile.gettempdir(), f"mimir-{session_id}.{ext}")
 
     _export_tasks[task_key] = {"status": "running", "path": outfile, "error": None}
 
     async def run_export():
         try:
-            from export import export_pdf, export_video, export_slides
+            from export import export_pdf, export_video, export_slides, export_pptx
             if fmt == "pdf":
                 await export_pdf(session_id, outfile)
             elif fmt == "video":
@@ -908,6 +908,8 @@ async def start_export(session_id: str, fmt: str, request: Request):
                     speed=body.get("speed", 2.0),
                     max_hold=body.get("max_hold", 3.0),
                 )
+            elif fmt == "pptx":
+                await export_pptx(session_id, outfile)
             else:
                 with _llm_chain_lock:
                     chain = [dict(t) for t in _llm_chain]
@@ -940,8 +942,9 @@ async def download_export(session_id: str, fmt: str):
     if not info or info["status"] != "done":
         return JSONResponse({"error": "Export not ready"}, status_code=404)
 
-    ext = {"pdf": "pdf", "video": "mp4", "slides": "html"}.get(fmt, fmt)
-    media = {"pdf": "application/pdf", "video": "video/mp4", "slides": "text/html"}.get(fmt, "application/octet-stream")
+    ext = {"pdf": "pdf", "video": "mp4", "slides": "html", "pptx": "pptx"}.get(fmt, fmt)
+    media = {"pdf": "application/pdf", "video": "video/mp4", "slides": "text/html",
+             "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation"}.get(fmt, "application/octet-stream")
     return FileResponse(
         info["path"],
         media_type=media,
