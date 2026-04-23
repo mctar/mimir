@@ -1255,10 +1255,11 @@ h1 {
   <div id="tab-recap" class="tab-panel active">
     <div class="transcript-toolbar" id="recap-toolbar" style="display:none;">
       <button class="btn btn-ghost" onclick="generateRecap()" id="btn-regenerate">Regenerate Recap</button>
-      <button class="btn btn-ghost" onclick="exportPdf()">Export PDF</button>
-      <button class="btn btn-ghost" onclick="exportGraph('slides')">Export Slides</button>
-      <button class="btn btn-ghost" onclick="copyMarkdown()">Copy Markdown</button>
-      <button class="btn btn-ghost" onclick="downloadMarkdown()">Download .md</button>
+      <button class="btn btn-ghost" onclick="exportPdf()">Export Recap as PDF</button>
+      <button class="btn btn-ghost" onclick="exportGraph('slides')">Generate and Export HTML Design Slides</button>
+      <button class="btn btn-ghost" onclick="exportGraph('pptx')">Generate and Export PPTX Slides</button>
+      <button class="btn btn-ghost" onclick="copyMarkdown()">Copy Recap as Markdown</button>
+      <button class="btn btn-ghost" onclick="downloadMarkdown()">Download Recap as Markdown</button>
       <span id="recap-edited-badge" class="recap-edited-badge" style="display:none;">✎ EDITED</span>
     </div>
     <div id="recap-content"></div>
@@ -2460,7 +2461,8 @@ function renderMindMap() {
   exportBar.innerHTML = `
     <button class="btn btn-ghost" onclick="exportGraph('pdf')">Export PDF</button>
     <button class="btn btn-ghost" onclick="exportGraph('video')">Export Video</button>
-    ${current && current.session.has_recap ? `<button class="btn btn-ghost" onclick="exportGraph('slides')">Export Slides</button>` : ''}
+    ${current && current.session.has_recap ? `<button class="btn btn-ghost" onclick="exportGraph('slides')">Export HTML Design Slides</button>` : ''}
+    ${current && current.session.has_recap ? `<button class="btn btn-ghost" onclick="exportGraph('pptx')">Export PPTX</button>` : ''}
   `;
   wrap.appendChild(exportBar);
 
@@ -2908,7 +2910,7 @@ async function exportGraph(fmt) {
   const origText = btn.textContent;
 
   btn.classList.add('exporting');
-  const fmtLabels = {pdf: 'Generating PDF...', video: 'Rendering video...', slides: 'Generating slides...'};
+  const fmtLabels = {pdf: 'Generating PDF...', video: 'Rendering video...', slides: 'Generating slides...', pptx: 'Generating PPTX...'};
   btn.textContent = fmtLabels[fmt] || `Exporting ${fmt}...`;
   toast(`Starting ${fmt.toUpperCase()} export...`);
 
@@ -2936,7 +2938,7 @@ async function exportGraph(fmt) {
     if (status === 'done') {
       const a = document.createElement('a');
       a.href = `/v1/sessions/${sid}/export/${fmt}/download`;
-      const fmtExt = {pdf: 'pdf', video: 'mp4', slides: 'html'};
+      const fmtExt = {pdf: 'pdf', video: 'mp4', slides: 'html', pptx: 'pptx'};
       a.download = `mimir-${sid}.${fmtExt[fmt] || fmt}`;
       document.body.appendChild(a);
       a.click();

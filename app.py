@@ -265,6 +265,38 @@ reconciler = GraphReconciler()
 _current_session_id: str | None = None
 _summary: str = ""
 
+# ─── Live slides state ───────────────────────────────────────────────────────
+SLIDE_TEMPLATE: list[dict] = [
+    # Positioning
+    {"id": "pos_what_sell", "section": "Positioning",       "title": "What we sell?"},
+    {"id": "pos_why_now",   "section": "Positioning",       "title": "Why now?"},
+    {"id": "pos_why_us",    "section": "Positioning",       "title": "Why are we well positioned?"},
+    {"id": "pos_to_whom",   "section": "Positioning",       "title": "To Whom?"},
+    {"id": "pos_statement", "section": "Positioning",       "title": "Position statement"},
+    # Value Proposition
+    {"id": "val_what_do",   "section": "Value Proposition", "title": "What we do?"},
+    {"id": "val_how",       "section": "Value Proposition", "title": "How we do it?"},
+    {"id": "val_paid",      "section": "Value Proposition", "title": "What do we get paid?"},
+    {"id": "val_scope",     "section": "Value Proposition", "title": "Scope, boundaries & non-goals"},
+    # Day 2 & Day 3
+    {"id": "d2_targets",    "section": "Day 2 & Day 3",     "title": "Targets and horizon"},
+    {"id": "d2_priorities", "section": "Day 2 & Day 3",     "title": "Priorities and orchestration"},
+]
+
+_slides: dict[str, dict] = {
+    s["id"]: {**s, "bullets": [], "key_quote": None, "updated_at": None}
+    for s in SLIDE_TEMPLATE
+}
+
+
+def _reset_slides() -> None:
+    """Clear all slide content (called on session reset)."""
+    for s in SLIDE_TEMPLATE:
+        _slides[s["id"]]["bullets"] = []
+        _slides[s["id"]]["key_quote"] = None
+        _slides[s["id"]]["updated_at"] = None
+
+
 # Monotonic session-generation counter. Bumped every time /v1/sessions/new or
 # /v1/sessions/{id}/end resets state. In-flight _proxy_claude tasks capture it
 # at request time; if it has changed by the time the LLM call returns, the
@@ -484,6 +516,17 @@ async def serve_monitor():
     return FileResponse(os.path.join(os.path.dirname(__file__), "monitor.html"))
 
 
+@app.get("/slides", response_class=HTMLResponse)
+async def serve_slides():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "slides.html"))
+
+
+@app.get("/api/slides")
+async def get_slides_state():
+    """Return current slide state for initialization by new slide viewers."""
+    return JSONResponse({"slides": _slides, "template": SLIDE_TEMPLATE})
+
+
 @app.get("/doc", response_class=HTMLResponse)
 async def serve_doc():
     return FileResponse(os.path.join(os.path.dirname(__file__), "doc.html"))
@@ -582,6 +625,7 @@ async def new_session(request: Request):
     reconciler.edges.clear()
     reconciler._mention_log.clear()
     reconciler._churn_log.clear()
+    _reset_slides()
     _summary = ""
     with _seq_lock:
         _seq_counter = 0
@@ -613,6 +657,7 @@ async def new_session(request: Request):
     reconciler.edges.clear()
     reconciler._mention_log.clear()
     reconciler._churn_log.clear()
+    _reset_slides()
     # Notify all connected frontends
     msg = json.dumps({"type": "session_reset", "session_id": session_id, "topic": topic})
     for ws in list(connected_clients):
@@ -640,6 +685,7 @@ async def end_session(session_id: str, request: Request):
     reconciler.edges.clear()
     reconciler._mention_log.clear()
     reconciler._churn_log.clear()
+    _reset_slides()
     _summary = ""
     with _seq_lock:
         _seq_counter = 0
@@ -827,10 +873,10 @@ _export_tasks: dict[str, dict] = {}  # session_id -> {task, status, path, error}
 @app.post("/v1/sessions/{session_id}/export/{fmt}")
 async def start_export(session_id: str, fmt: str, request: Request):
     """Start a PDF, video, or HTML slides export. Returns immediately; poll status endpoint."""
-    if fmt not in ("pdf", "video", "slides"):
-        return JSONResponse({"error": "Format must be 'pdf', 'video', or 'slides'"}, status_code=400)
+    if fmt not in ("pdf", "video", "slides", "pptx"):
+        return JSONResponse({"error": "Format must be 'pdf', 'video', 'slides', or 'pptx'"}, status_code=400)
 
-    if fmt == "slides":
+    if fmt in ("slides", "pptx"):
         recap = await db.get_recap(session_id)
         if not recap or not recap.get("recap"):
             return JSONResponse({"error": "No recap found. Generate a recap first."}, status_code=400)
@@ -846,14 +892,14 @@ async def start_export(session_id: str, fmt: str, request: Request):
         pass
 
     import tempfile
-    ext = {"pdf": "pdf", "video": "mp4", "slides": "html"}[fmt]
+    ext = {"pdf": "pdf", "video": "mp4", "slides": "html", "pptx": "pptx"}[fmt]
     outfile = os.path.join(tempfile.gettempdir(), f"mimir-{session_id}.{ext}")
 
     _export_tasks[task_key] = {"status": "running", "path": outfile, "error": None}
 
     async def run_export():
         try:
-            from export import export_pdf, export_video, export_slides
+            from export import export_pdf, export_video, export_slides, export_pptx
             if fmt == "pdf":
                 await export_pdf(session_id, outfile)
             elif fmt == "video":
@@ -862,6 +908,8 @@ async def start_export(session_id: str, fmt: str, request: Request):
                     speed=body.get("speed", 2.0),
                     max_hold=body.get("max_hold", 3.0),
                 )
+            elif fmt == "pptx":
+                await export_pptx(session_id, outfile)
             else:
                 with _llm_chain_lock:
                     chain = [dict(t) for t in _llm_chain]
@@ -894,8 +942,9 @@ async def download_export(session_id: str, fmt: str):
     if not info or info["status"] != "done":
         return JSONResponse({"error": "Export not ready"}, status_code=404)
 
-    ext = {"pdf": "pdf", "video": "mp4", "slides": "html"}.get(fmt, fmt)
-    media = {"pdf": "application/pdf", "video": "video/mp4", "slides": "text/html"}.get(fmt, "application/octet-stream")
+    ext = {"pdf": "pdf", "video": "mp4", "slides": "html", "pptx": "pptx"}.get(fmt, fmt)
+    media = {"pdf": "application/pdf", "video": "video/mp4", "slides": "text/html",
+             "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation"}.get(fmt, "application/octet-stream")
     return FileResponse(
         info["path"],
         media_type=media,
@@ -2093,6 +2142,25 @@ def _publish_llm_state() -> None:
         metrics["cb_failures"] = total_failures
 
 
+# ─── Slide prompt injection ───────────────────────────────────────────────────
+_SLIDES_INJECT = """
+
+Additionally, return a "slide_updates" array in the same JSON object.
+For each slide whose topic is addressed in the CURRENT transcript excerpt, provide:
+  {"slide_id": "...", "bullets": ["...", "..."], "key_quote": "verbatim quote or null if none"}
+Slide IDs and their questions:
+  pos_what_sell="What we sell?", pos_why_now="Why now?",
+  pos_why_us="Why are we well positioned?", pos_to_whom="To Whom?",
+  pos_statement="Position statement (one sentence summary)",
+  val_what_do="What we do?", val_how="How we do it?",
+  val_paid="What do we get paid?", val_scope="Scope, boundaries & non-goals",
+  d2_targets="Targets and horizon", d2_priorities="Priorities and orchestration"
+Only include slides with NEW relevant content from the current segment.
+Max 5 bullets per slide. Each bullet ≤ 15 words.
+If no slide is addressed in this segment, return "slide_updates": [].
+"""
+
+
 async def _proxy_claude(websocket: WebSocket, req: dict):
     """Proxy an LLM request server-side, walking the fallback chain."""
     global _summary
@@ -2101,7 +2169,9 @@ async def _proxy_claude(websocket: WebSocket, req: dict):
 
     t0 = time.time()
     try:
-        body = req.get("body", {})
+        body = dict(req.get("body", {}))
+        # Inject slide extraction into every graph analysis call
+        body["system"] = body.get("system", "") + _SLIDES_INJECT
         status_code, data, provider, model = await call_llm_chain(body)
         dt = time.time() - t0
 
@@ -2179,8 +2249,41 @@ async def _proxy_claude(websocket: WebSocket, req: dict):
                             await ws.send_text(graph_msg)
                         except Exception:
                             pass
+
+                    # Parse and broadcast slide_updates if present
+                    slide_updates = parsed.get("slide_updates", [])
+                    if isinstance(slide_updates, list) and slide_updates:
+                        now = time.time()
+                        updated_ids = []
+                        for upd in slide_updates:
+                            sid = upd.get("slide_id")
+                            if sid and sid in _slides:
+                                new_bullets = upd.get("bullets", [])
+                                changed = False
+                                if isinstance(new_bullets, list) and new_bullets:
+                                    _slides[sid]["bullets"] = [str(b) for b in new_bullets[:5]]
+                                    changed = True
+                                if "key_quote" in upd and upd["key_quote"] is not None:
+                                    _slides[sid]["key_quote"] = str(upd["key_quote"])
+                                    changed = True
+                                if changed:
+                                    _slides[sid]["updated_at"] = now
+                                    updated_ids.append(sid)
+                        if updated_ids:
+                            slide_msg = json.dumps({
+                                "type": "slide_update",
+                                "slides": {sid: _slides[sid] for sid in updated_ids},
+                            })
+                            for ws in list(connected_clients):
+                                try:
+                                    await ws.send_text(slide_msg)
+                                except Exception:
+                                    pass
+                            logger.info(f"Slides: updated {updated_ids}")
                 else:
                     logger.error("LLM: parsed JSON but missing nodes/edges keys")
+                    if parsed.get("slide_updates"):
+                        logger.debug("Slides: dropped slide_updates (no graph keys in response)")
                     with metrics_lock:
                         metrics["llm_parse_no_graph"] = metrics.get("llm_parse_no_graph", 0) + 1
             except (json.JSONDecodeError, KeyError) as parse_err:
@@ -2280,6 +2383,7 @@ async def ws_endpoint(websocket: WebSocket):
             "snapshot": snapshot,
             "segments": segments,
             "restore_ms": 0,
+            "slides": dict(_slides),
         })
     try:
         while True:
@@ -2332,6 +2436,7 @@ async def ws_endpoint(websocket: WebSocket):
                         "snapshot": snapshot,
                         "segments": segments,
                         "restore_ms": round(restore_ms, 1),
+                        "slides": dict(_slides),
                     })
 
             elif msg_type == "frontend_metrics":
