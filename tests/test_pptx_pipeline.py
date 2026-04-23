@@ -308,3 +308,152 @@ def test_generate_deck_spec_strips_markdown_fence():
 
     assert result["slides"][0]["layout"] == "bullets"
     assert result["slides"][0]["slots"]["title"] == "Fenced"
+
+
+def test_assemble_pptx_cards3(tmp_path):
+    """cards-3 génère une slide avec titre + 3 paires heading/content."""
+    import export as exp
+    from pptx import Presentation
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {
+                "layout": "cards-3",
+                "slots": {
+                    "title": "Trois catégories",
+                    "cards": [
+                        {"heading": "Cat A", "content": "Contenu de A"},
+                        {"heading": "Cat B", "content": "Contenu de B"},
+                        {"heading": "Cat C", "content": "Contenu de C"},
+                    ],
+                },
+            }
+        ],
+    }
+    output = str(tmp_path / "cards3.pptx")
+    exp._assemble_pptx(deck_spec, output)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 1000
+    prs = Presentation(output)
+    all_text = " ".join(
+        shape.text_frame.text
+        for slide in prs.slides
+        for shape in slide.shapes
+        if shape.has_text_frame
+    )
+    assert "Cat A" in all_text
+    assert "Contenu de B" in all_text
+    assert "Cat C" in all_text
+
+
+def test_assemble_pptx_cards4(tmp_path):
+    """cards-4 génère une slide avec titre + 4 paires heading/content."""
+    import export as exp
+    from pptx import Presentation
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {
+                "layout": "cards-4",
+                "slots": {
+                    "title": "Quatre thèmes",
+                    "cards": [
+                        {"heading": "Thème 1", "content": "Desc 1"},
+                        {"heading": "Thème 2", "content": "Desc 2"},
+                        {"heading": "Thème 3", "content": "Desc 3"},
+                        {"heading": "Thème 4", "content": "Desc 4"},
+                    ],
+                },
+            }
+        ],
+    }
+    output = str(tmp_path / "cards4.pptx")
+    exp._assemble_pptx(deck_spec, output)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 1000
+    prs = Presentation(output)
+    all_text = " ".join(
+        shape.text_frame.text
+        for slide in prs.slides
+        for shape in slide.shapes
+        if shape.has_text_frame
+    )
+    assert "Thème 2" in all_text
+    assert "Desc 4" in all_text
+
+
+def test_assemble_pptx_cards5(tmp_path):
+    """cards-5 génère une slide avec titre + 5 paires heading/content."""
+    import export as exp
+    from pptx import Presentation
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {
+                "layout": "cards-5",
+                "slots": {
+                    "title": "Cinq acteurs",
+                    "cards": [
+                        {"heading": "Acteur 1", "content": "Rôle 1"},
+                        {"heading": "Acteur 2", "content": "Rôle 2"},
+                        {"heading": "Acteur 3", "content": "Rôle 3"},
+                        {"heading": "Acteur 4", "content": "Rôle 4"},
+                        {"heading": "Acteur 5", "content": "Rôle 5"},
+                    ],
+                },
+            }
+        ],
+    }
+    output = str(tmp_path / "cards5.pptx")
+    exp._assemble_pptx(deck_spec, output)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 1000
+    prs = Presentation(output)
+    all_text = " ".join(
+        shape.text_frame.text
+        for slide in prs.slides
+        for shape in slide.shapes
+        if shape.has_text_frame
+    )
+    assert "Acteur 3" in all_text
+    assert "Rôle 5" in all_text
+
+
+def test_assemble_pptx_cards4_rounded(tmp_path):
+    """cards-4-rounded génère une slide avec 4 paires heading/content (variante arrondie)."""
+    import export as exp
+    from pptx import Presentation
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {
+                "layout": "cards-4-rounded",
+                "slots": {
+                    "title": "Quatre étapes",
+                    "cards": [
+                        {"heading": "Étape 1", "content": "Description étape 1"},
+                        {"heading": "Étape 2", "content": "Description étape 2"},
+                        {"heading": "Étape 3", "content": "Description étape 3"},
+                        {"heading": "Étape 4", "content": "Description étape 4"},
+                    ],
+                },
+            }
+        ],
+    }
+    output = str(tmp_path / "cards4r.pptx")
+    exp._assemble_pptx(deck_spec, output)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 1000
+    prs = Presentation(output)
+    all_text = " ".join(
+        shape.text_frame.text
+        for slide in prs.slides
+        for shape in slide.shapes
+        if shape.has_text_frame
+    )
+    assert "Étape 2" in all_text
+    assert "Description étape 4" in all_text
