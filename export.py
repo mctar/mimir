@@ -619,6 +619,88 @@ def _assemble_pptx(deck_spec: dict, output: str) -> None:
     logger.info(f"PPTX saved: {output} ({size_kb:.0f} KB)")
 
 
+_DECK_SPEC_SYSTEM = f"""\
+Tu es un expert en design de présentations professionnelles.
+Tu génères ou modifies un deck de slides au format JSON strict.
+
+CATALOGUE DE LAYOUTS DISPONIBLES :
+{_LAYOUT_CATALOG_STR}
+
+RÈGLES :
+- Choisis le layout le plus approprié au contenu de chaque slide.
+- Pour "bullets" : max 6 items, max 15 mots par item.
+- Si un DECK ACTUEL est fourni, applique les INSTRUCTIONS en le modifiant
+  (ne recrée pas de zéro sauf si explicitement demandé).
+- Max 15 slides. Si le contenu dépasse, priorise et condense.
+- Output : JSON uniquement. Aucun texte autour. Aucune fence markdown.
+- Format attendu :
+  {{"schema_version": 1, "slides": [{{"layout": "...", "slots": {{...}}}}]}}
+"""
+
+
+async def generate_deck_spec(
+    transcript: str,
+    recap: dict,
+    instructions: str | None,
+    current_deck_spec: dict | None,
+    chain: list[dict],
+) -> dict:
+    """Call LLM to generate or update a deck_spec from transcript + recap + instructions.
+
+    Returns the deck_spec dict. Retries once on invalid JSON.
+    Raises RuntimeError if all tiers fail.
+    """
+    import json as _json
+
+    # Truncate transcript — keep tail (most recent content is most relevant)
+    max_transcript = 8000
+    if len(transcript) > max_transcript:
+        transcript = "[...]\n" + transcript[-max_transcript:]
+
+    def _build_user_prompt(reminder: str = "") -> str:
+        parts = [f"TRANSCRIPT :\n{transcript}", f"RÉCAP :\n{_json.dumps(recap, ensure_ascii=False, indent=2)}"]
+        if current_deck_spec:
+            parts.append(f"DECK ACTUEL :\n{_json.dumps(current_deck_spec, ensure_ascii=False, indent=2)}")
+        if instructions and instructions.strip():
+            parts.append(f"INSTRUCTIONS :\n{instructions.strip()}")
+        if reminder:
+            parts.append(reminder)
+        parts.append("Génère le deck_spec JSON.")
+        return "\n\n".join(parts)
+
+    last_error = None
+    for attempt in range(2):
+        reminder = "" if attempt == 0 else "RAPPEL : output JSON uniquement, aucun texte, aucune fence markdown."
+        user_prompt = _build_user_prompt(reminder)
+
+        for tier in chain:
+            provider, model = tier["provider"], tier["model"]
+            try:
+                raw = await _llm_call_slides(tier, _DECK_SPEC_SYSTEM, user_prompt)
+                # Strip markdown fences if present
+                raw = raw.strip()
+                if raw.startswith("```"):
+                    raw = re.sub(r"^```[a-z]*\n?", "", raw)
+                    raw = re.sub(r"\n?```$", "", raw)
+                    raw = raw.strip()
+                spec = _json.loads(raw)
+                # Enforce max slides
+                if len(spec.get("slides", [])) > 15:
+                    logger.warning(f"generate_deck_spec: {len(spec['slides'])} slides, truncating to 15")
+                    spec["slides"] = spec["slides"][:15]
+                return spec
+            except _json.JSONDecodeError as e:
+                logger.warning(f"generate_deck_spec attempt {attempt+1}: JSON parse error — {e}")
+                last_error = e
+                break  # retry with reminder
+            except Exception as e:
+                logger.warning(f"generate_deck_spec tier {provider}/{model} failed: {e}")
+                last_error = e
+                continue  # try next tier
+
+    raise RuntimeError(f"generate_deck_spec: all attempts failed. Last error: {last_error}")
+
+
 async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"):
     """Generate an editable PPTX slide deck from a session recap using the CAP template."""
     from pptx import Presentation

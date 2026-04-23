@@ -160,3 +160,68 @@ def test_assemble_pptx_all_layouts(tmp_path):
     exp._assemble_pptx(deck_spec, output)
     assert os.path.exists(output)
     assert os.path.getsize(output) > 1000
+
+
+def test_generate_deck_spec_parses_valid_json():
+    """generate_deck_spec parse correctement un JSON LLM valide."""
+    import export as exp
+    import unittest.mock as mock
+
+    valid_spec = {
+        "schema_version": 1,
+        "slides": [
+            {"layout": "cover", "slots": {"title": "Test", "date": "2026-04-23", "duration": "30m"}},
+            {"layout": "bullets", "slots": {"title": "Points", "bullets": ["A", "B"]}},
+        ],
+    }
+    import json
+
+    async def fake_call(tier, system, user):
+        return json.dumps(valid_spec)
+
+    with mock.patch.object(exp, "_llm_call_slides", fake_call):
+        chain = [{"provider": "test", "model": "test-model"}]
+        result = asyncio.run(
+            exp.generate_deck_spec(
+                transcript="Texte de test",
+                recap={"elevator_pitch": "pitch"},
+                instructions=None,
+                current_deck_spec=None,
+                chain=chain,
+            )
+        )
+
+    assert result["schema_version"] == 1
+    assert len(result["slides"]) == 2
+    assert result["slides"][0]["layout"] == "cover"
+
+
+def test_generate_deck_spec_retries_on_invalid_json():
+    """generate_deck_spec réessaie une fois si le JSON est invalide."""
+    import export as exp
+    import unittest.mock as mock
+    import json
+
+    valid_spec = {"schema_version": 1, "slides": [{"layout": "bullets", "slots": {"title": "T", "bullets": []}}]}
+    call_count = {"n": 0}
+
+    async def fake_call(tier, system, user):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return "not valid json {{{"
+        return json.dumps(valid_spec)
+
+    with mock.patch.object(exp, "_llm_call_slides", fake_call):
+        chain = [{"provider": "test", "model": "test-model"}]
+        result = asyncio.run(
+            exp.generate_deck_spec(
+                transcript="Texte",
+                recap={},
+                instructions=None,
+                current_deck_spec=None,
+                chain=chain,
+            )
+        )
+
+    assert call_count["n"] == 2
+    assert result["slides"][0]["layout"] == "bullets"
