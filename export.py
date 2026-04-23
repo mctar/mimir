@@ -101,7 +101,7 @@ def find_peak_snapshot(snapshots: list[dict]) -> dict:
 
 def format_date(ts: float) -> str:
     from datetime import datetime
-    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+    return datetime.fromtimestamp(ts).strftime("%d %B %Y")
 
 
 def format_duration(seconds: float) -> str:
@@ -495,6 +495,8 @@ def _fmt_recap_items(value) -> list[str]:
     for item in value:
         if isinstance(item, dict):
             topics = item.get("topics", "")
+            if isinstance(topics, list):
+                topics = " ↔ ".join(topics)
             insight = item.get("insight", "")
             if topics and insight:
                 result.append(f"{topics} : {insight}")
@@ -567,21 +569,31 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
         slide.placeholders[0].text = "Résumé"
         slide.placeholders[22].text = summary
 
-    # 4. Points clés
-    takeaways = _fmt_recap_items(recap.get("key_takeaways", []))
+    # 4. Points clés (schema v2: "retain", fallback to "key_takeaways" for older recaps)
+    takeaways = _fmt_recap_items(recap.get("retain", recap.get("key_takeaways", [])))
     if takeaways:
         slide = prs.slides.add_slide(prs.slide_layouts[21])
         slide.placeholders[0].text = "Points clés"
         _fill_bullets(slide.placeholders[22], takeaways)
 
     # 5. Connexions non-évidentes
-    connections = _fmt_recap_items(recap.get("non_obvious_connections", []))
+    raw_connections = recap.get("non_obvious_connections", [])
+    connections = _fmt_recap_items(raw_connections)
     if connections:
         if len(connections) <= 3:
             slide = prs.slides.add_slide(prs.slide_layouts[35])
             slide.placeholders[0].text = "Connexions non-évidentes"
-            for ph_idx, conn in zip([22, 35, 36], connections):
-                slide.placeholders[ph_idx].text = conn
+            for ph_idx, item in zip([22, 35, 36], raw_connections if isinstance(raw_connections, list) else []):
+                topics = item.get("topics", "") if isinstance(item, dict) else ""
+                if isinstance(topics, list):
+                    topics = " ↔ ".join(topics)
+                insight = item.get("insight", "") if isinstance(item, dict) else str(item)
+                tf = slide.placeholders[ph_idx].text_frame
+                tf.clear()
+                tf.text = topics
+                if insight:
+                    tf.add_paragraph().text = ""
+                    tf.add_paragraph().text = insight
         else:
             slide = prs.slides.add_slide(prs.slide_layouts[21])
             slide.placeholders[0].text = "Connexions non-évidentes"
@@ -594,7 +606,21 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
         slide.placeholders[0].text = "Tensions & contradictions"
         _fill_bullets(slide.placeholders[22], tensions)
 
-    # 7. Concepts actifs
+    # 7. Décisions
+    decisions = _fmt_recap_items(recap.get("decisions", []))
+    if decisions:
+        slide = prs.slides.add_slide(prs.slide_layouts[21])
+        slide.placeholders[0].text = "Décisions"
+        _fill_bullets(slide.placeholders[22], decisions)
+
+    # 8. Points ouverts
+    open_threads = _fmt_recap_items(recap.get("open_threads", []))
+    if open_threads:
+        slide = prs.slides.add_slide(prs.slide_layouts[21])
+        slide.placeholders[0].text = "Points ouverts"
+        _fill_bullets(slide.placeholders[22], open_threads)
+
+    # 9. Concepts actifs
     if active_nodes:
         slide = prs.slides.add_slide(prs.slide_layouts[48])
         slide.placeholders[0].text = "Concepts actifs"
