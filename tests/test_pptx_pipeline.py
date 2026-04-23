@@ -108,3 +108,38 @@ def test_pptx_instructions_survive_recap_regeneration(tmp_db):
     # pptx_instructions must survive
     result = asyncio.run(db.get_pptx_data(sid))
     assert result["instructions"] == "Traduire en anglais"
+
+
+def test_assemble_pptx_creates_file(tmp_path):
+    """_assemble_pptx génère un fichier .pptx sans lever d'exception."""
+    import export as exp
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {"layout": "cover",      "slots": {"title": "Test Session", "date": "23 April 2026", "duration": "45m"}},
+            {"layout": "quote-large","slots": {"title": "Pitch", "body": "Une phrase de pitch."}},
+            {"layout": "bullets",    "slots": {"title": "Points clés", "bullets": ["Point 1", "Point 2", "Point 3"]}},
+            {"layout": "three-columns", "slots": {"title": "Connexions", "col1": "A ↔ B", "col2": "C ↔ D", "col3": "E ↔ F"}},
+            {"layout": "concepts",   "slots": {"title": "Concepts", "terms": ["A", "B", "C"], "edges": ["A → B", "B → C"]}},
+        ],
+    }
+    output = str(tmp_path / "test_out.pptx")
+    exp._assemble_pptx(deck_spec, output)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 1000
+
+
+def test_assemble_pptx_unknown_layout_fallback(tmp_path):
+    """Un layout inconnu ne lève pas d'exception (fallback bullets)."""
+    import export as exp
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {"layout": "invented-layout", "slots": {"title": "Fallback", "bullets": ["item"]}},
+        ],
+    }
+    output = str(tmp_path / "fallback.pptx")
+    exp._assemble_pptx(deck_spec, output)
+    assert os.path.exists(output)

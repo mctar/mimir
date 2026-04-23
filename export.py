@@ -507,6 +507,115 @@ def _fmt_recap_items(value) -> list[str]:
     return [s for s in result if s]
 
 
+# ─── Layout catalogue (exposed to LLM) ───────────────────────────────────────
+
+LAYOUT_CATALOG = {
+    "cover": {
+        "description": "Slide de titre",
+        "slots": "title (str), date (str), duration (str)",
+        "layout_idx": 0,
+    },
+    "text-large": {
+        "description": "Titre + grand corps de texte",
+        "slots": "title (str), body (str)",
+        "layout_idx": 21,
+    },
+    "quote-large": {
+        "description": "Citation ou pitch mis en valeur",
+        "slots": "title (str), body (str)",
+        "layout_idx": 21,
+    },
+    "bullets": {
+        "description": "Titre + liste à puces (max 6 items, max 15 mots chacun)",
+        "slots": "title (str), bullets (list[str])",
+        "layout_idx": 21,
+    },
+    "three-columns": {
+        "description": "Trois colonnes égales",
+        "slots": "title (str), col1 (str), col2 (str), col3 (str)",
+        "layout_idx": 35,
+    },
+    "two-columns": {
+        "description": "Deux colonnes",
+        "slots": "title (str), left (str), right (str)",
+        "layout_idx": 35,
+    },
+    "concepts": {
+        "description": "Nuage de termes + relations",
+        "slots": "title (str), terms (list[str]), edges (list[str])",
+        "layout_idx": 48,
+    },
+}
+
+_LAYOUT_CATALOG_STR = "\n".join(
+    f'- "{name}": {info["description"]}. Slots: {info["slots"]}'
+    for name, info in LAYOUT_CATALOG.items()
+)
+
+
+def _assemble_pptx(deck_spec: dict, output: str) -> None:
+    """Assemble a .pptx file deterministically from a deck_spec dict."""
+    from pptx import Presentation
+
+    prs = Presentation(PPTX_TEMPLATE)
+
+    for slide_def in deck_spec.get("slides", []):
+        layout_name = slide_def.get("layout", "bullets")
+        slots = slide_def.get("slots", {})
+
+        # Fallback for unknown layouts
+        if layout_name not in LAYOUT_CATALOG:
+            logger.warning(f"_assemble_pptx: unknown layout '{layout_name}', falling back to 'bullets'")
+            layout_name = "bullets"
+
+        layout_idx = LAYOUT_CATALOG[layout_name]["layout_idx"]
+        slide = prs.slides.add_slide(prs.slide_layouts[layout_idx])
+
+        if layout_name == "cover":
+            slide.placeholders[0].text = slots.get("title", "")
+            slide.placeholders[10].text = slots.get("date", "")
+            if slots.get("duration"):
+                slide.placeholders[11].text = slots["duration"]
+
+        elif layout_name in ("text-large", "quote-large"):
+            slide.placeholders[0].text = slots.get("title", "")
+            slide.placeholders[22].text = slots.get("body", "")
+
+        elif layout_name == "bullets":
+            slide.placeholders[0].text = slots.get("title", "")
+            _fill_bullets(slide.placeholders[22], slots.get("bullets", []))
+
+        elif layout_name == "three-columns":
+            slide.placeholders[0].text = slots.get("title", "")
+            slide.placeholders[22].text = slots.get("col1", "")
+            slide.placeholders[35].text = slots.get("col2", "")
+            slide.placeholders[36].text = slots.get("col3", "")
+
+        elif layout_name == "two-columns":
+            slide.placeholders[0].text = slots.get("title", "")
+            slide.placeholders[22].text = slots.get("left", "")
+            slide.placeholders[35].text = slots.get("right", "")
+
+        elif layout_name == "concepts":
+            slide.placeholders[0].text = slots.get("title", "")
+            tf = slide.placeholders[13].text_frame
+            tf.clear()
+            terms = slots.get("terms", [])
+            edges = slots.get("edges", [])
+            tf.text = ", ".join(terms[:24])
+            if edges:
+                tf.add_paragraph().text = ""
+                p = tf.add_paragraph()
+                p.text = "Relations :"
+                for edge in edges[:10]:
+                    tf.add_paragraph().text = f"  {edge}"
+
+    os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
+    prs.save(output)
+    size_kb = os.path.getsize(output) / 1024
+    print(f"PPTX saved: {output} ({size_kb:.0f} KB)")
+
+
 async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"):
     """Generate an editable PPTX slide deck from a session recap using the CAP template."""
     from pptx import Presentation
