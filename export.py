@@ -699,13 +699,16 @@ async def generate_deck_spec(
     raise RuntimeError(f"generate_deck_spec: all attempts failed. Last error: {last_error}")
 
 
-async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"):
-    """Generate an editable PPTX slide deck from a session recap using the CAP template."""
-    from pptx import Presentation
+async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db",
+                      chain: list[dict] | None = None) -> None:
+    """Generate a PPTX slide deck via LLM (deck_spec) then assemble deterministically."""
+    if not chain:
+        raise RuntimeError("export_pptx requires a chain. Pass chain= from app.py.")
 
     if not db._db:
         await db.init_db(db_path)
 
+    # Load session
     sessions = await db.list_sessions()
     session = next((s for s in sessions if s["id"] == session_id), None)
     if not session:
@@ -714,122 +717,41 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
     if not session:
         raise ValueError(f"Session '{session_id}' not found.")
 
+    # Load recap (required)
     recap_data = await db.get_recap(session_id)
     if not recap_data or not recap_data.get("recap"):
         raise ValueError(f"Session '{session_id}' has no recap. Generate one first.")
     recap = recap_data["recap"]
 
-    # Peak graph nodes + edges
-    active_nodes: list[str] = []
-    edges: list[str] = []
-    snapshots = await db.get_session_snapshots(session_id)
-    if snapshots:
-        peak = find_peak_snapshot(snapshots)
-        nodes = peak["graph"].get("nodes", {})
-        active_nodes = [n.get("label", n.get("id", "?")) for n in nodes.values() if n.get("state") == "active"]
-        edges = [
-            f"{e.get('source', '?')} → {e.get('target', '?')}"
-            for e in peak["graph"].get("edges", [])[:15]
-        ]
+    # Load pptx_data (instructions + existing deck_spec)
+    pptx_data = await db.get_pptx_data(session_id)
+    instructions = pptx_data["instructions"] if pptx_data else None
+    current_deck_spec = pptx_data["deck_spec"] if pptx_data else None
+
+    # Load transcript
+    segments = await db.get_session_transcript(session_id)
+    transcript = " ".join(s["text"] for s in segments if not s.get("is_partial"))
 
     topic = session.get("topic", "Untitled")
-    date_str = format_date(session.get("created_at", 0))
-    duration = ""
-    if session.get("ended_at") and session.get("created_at"):
-        duration = format_duration(session["ended_at"] - session["created_at"])
+    logger.info(f"PPTX export: session={session_id[:8]}… topic='{topic}' "
+          f"transcript={len(transcript)} chars instructions={'yes' if instructions else 'no'} "
+          f"deck_spec={'update' if current_deck_spec else 'new'}")
 
-    prs = Presentation(PPTX_TEMPLATE)  # template_cap_blank.pptx — no slides, no orphaned parts
+    # Generate deck_spec via LLM
+    deck_spec = await generate_deck_spec(
+        transcript=transcript,
+        recap=recap,
+        instructions=instructions,
+        current_deck_spec=current_deck_spec,
+        chain=chain,
+    )
 
-    # 1. Cover
-    cover = prs.slides.add_slide(prs.slide_layouts[0])
-    cover.placeholders[0].text = topic
-    cover.placeholders[10].text = date_str
-    if duration:
-        cover.placeholders[11].text = duration
+    # Persist deck_spec
+    served_model = chain[0]["model"] if chain else "unknown"
+    await db.save_deck_spec(session_id, deck_spec, served_model)
 
-    # 2. Pitch
-    pitch = recap.get("elevator_pitch", "")
-    if pitch:
-        slide = prs.slides.add_slide(prs.slide_layouts[21])
-        slide.placeholders[0].text = "Pitch"
-        slide.placeholders[22].text = pitch
-
-    # 3. Résumé
-    summary = recap.get("summary", "")
-    if summary:
-        slide = prs.slides.add_slide(prs.slide_layouts[21])
-        slide.placeholders[0].text = "Résumé"
-        slide.placeholders[22].text = summary
-
-    # 4. Points clés (schema v2: "retain", fallback to "key_takeaways" for older recaps)
-    takeaways = _fmt_recap_items(recap.get("retain", recap.get("key_takeaways", [])))
-    if takeaways:
-        slide = prs.slides.add_slide(prs.slide_layouts[21])
-        slide.placeholders[0].text = "Points clés"
-        _fill_bullets(slide.placeholders[22], takeaways)
-
-    # 5. Connexions non-évidentes
-    raw_connections = recap.get("non_obvious_connections", [])
-    connections = _fmt_recap_items(raw_connections)
-    if connections:
-        if len(connections) <= 3:
-            slide = prs.slides.add_slide(prs.slide_layouts[35])
-            slide.placeholders[0].text = "Connexions non-évidentes"
-            for ph_idx, item in zip([22, 35, 36], raw_connections if isinstance(raw_connections, list) else []):
-                topics = item.get("topics", "") if isinstance(item, dict) else ""
-                if isinstance(topics, list):
-                    topics = " ↔ ".join(topics)
-                insight = item.get("insight", "") if isinstance(item, dict) else str(item)
-                tf = slide.placeholders[ph_idx].text_frame
-                tf.clear()
-                tf.text = topics
-                if insight:
-                    tf.add_paragraph().text = ""
-                    tf.add_paragraph().text = insight
-        else:
-            slide = prs.slides.add_slide(prs.slide_layouts[21])
-            slide.placeholders[0].text = "Connexions non-évidentes"
-            _fill_bullets(slide.placeholders[22], connections)
-
-    # 6. Tensions & contradictions
-    tensions = _fmt_recap_items(recap.get("contradictions", []))
-    if tensions:
-        slide = prs.slides.add_slide(prs.slide_layouts[21])
-        slide.placeholders[0].text = "Tensions & contradictions"
-        _fill_bullets(slide.placeholders[22], tensions)
-
-    # 7. Décisions
-    decisions = _fmt_recap_items(recap.get("decisions", []))
-    if decisions:
-        slide = prs.slides.add_slide(prs.slide_layouts[21])
-        slide.placeholders[0].text = "Décisions"
-        _fill_bullets(slide.placeholders[22], decisions)
-
-    # 8. Points ouverts
-    open_threads = _fmt_recap_items(recap.get("open_threads", []))
-    if open_threads:
-        slide = prs.slides.add_slide(prs.slide_layouts[21])
-        slide.placeholders[0].text = "Points ouverts"
-        _fill_bullets(slide.placeholders[22], open_threads)
-
-    # 9. Concepts actifs
-    if active_nodes:
-        slide = prs.slides.add_slide(prs.slide_layouts[48])
-        slide.placeholders[0].text = "Concepts actifs"
-        tf = slide.placeholders[13].text_frame
-        tf.clear()
-        tf.text = ", ".join(active_nodes[:24])
-        if edges:
-            tf.add_paragraph().text = ""
-            p = tf.add_paragraph()
-            p.text = "Relations :"
-            for edge in edges[:10]:
-                tf.add_paragraph().text = f"  {edge}"
-
-    os.makedirs(os.path.dirname(os.path.abspath(output)), exist_ok=True)
-    prs.save(output)
-    size_kb = os.path.getsize(output) / 1024
-    print(f"PPTX saved: {output} ({size_kb:.0f} KB)")
+    # Assemble PPTX
+    _assemble_pptx(deck_spec, output)
 
 
 # ─── CLI ───
