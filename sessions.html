@@ -1267,6 +1267,37 @@ h1 {
       <p>No recap generated yet for this session.</p>
       <button class="btn btn-primary" id="btn-generate" onclick="generateRecap()">Generate Recap</button>
     </div>
+
+  <!-- PPTX instructions + deck preview zone -->
+  <div id="pptx-zone" style="display:none; margin-top: 1.5rem;">
+    <div class="recap-section" style="margin-bottom:1rem;">
+      <h3>Instructions PPTX <span style="font-weight:400; font-size:.85em; opacity:.6;">(optionnel)</span></h3>
+      <textarea id="pptx-instructions-input"
+        placeholder="Ex: Traduire le deck en anglais. Compléter la slide Points clés avec la discussion sur le budget."
+        style="width:100%; min-height:80px; box-sizing:border-box; background:var(--surface); color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:.6rem .8rem; font-size:.9rem; font-family:inherit; resize:vertical;"
+        oninput="pptxInstructionsDirty=true"></textarea>
+      <div style="display:flex; gap:.5rem; margin-top:.5rem; align-items:center;">
+        <button class="btn btn-ghost" onclick="savePptxInstructions()" id="btn-save-pptx-instructions">Sauvegarder</button>
+        <span id="pptx-instructions-saved" style="font-size:.8rem; opacity:.5; display:none;">✓ Sauvegardé</span>
+      </div>
+    </div>
+
+    <div id="pptx-deck-preview" style="display:none;" class="recap-section">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:.5rem;">
+        <h3>Deck actuel</h3>
+        <span id="pptx-deck-age" style="font-size:.8rem; opacity:.5;"></span>
+      </div>
+      <ol id="pptx-slides-list" style="margin:0 0 1rem 1.2rem; padding:0; font-size:.9rem; line-height:1.7;"></ol>
+      <div style="display:flex; gap:.5rem; flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="generatePptx(event)" id="btn-regen-pptx">Regénérer PPTX</button>
+        <button class="btn btn-ghost" onclick="downloadPptx()" id="btn-dl-pptx">Télécharger</button>
+      </div>
+    </div>
+
+    <div id="pptx-no-deck" style="margin-top:.5rem;">
+      <button class="btn btn-primary" onclick="generatePptx(event)" id="btn-gen-pptx">Générer PPTX</button>
+    </div>
+  </div>
   </div>
 
   <!-- Transcript Tab -->
@@ -1765,6 +1796,7 @@ function renderRecap() {
     container.innerHTML = '';
     empty.style.display = '';
     document.getElementById('recap-toolbar').style.display = 'none';
+    document.getElementById('pptx-zone').style.display = 'none';
     btn.textContent = 'Generate Recap';
     btn.disabled = false;
     return;
@@ -1772,6 +1804,8 @@ function renderRecap() {
 
   empty.style.display = 'none';
   document.getElementById('recap-toolbar').style.display = '';
+  document.getElementById('pptx-zone').style.display = 'block';
+  loadPptxData();
   const badge = document.getElementById('recap-edited-badge');
   if (badge) badge.style.display = (current.recap.model === 'manual') ? '' : 'none';
   const r = current.recap.recap;
@@ -2970,6 +3004,152 @@ function downloadMarkdown() {
   a.href = url; a.download = name; a.click();
   URL.revokeObjectURL(url);
   toast('Downloaded ' + name);
+}
+
+// ─── PPTX instructions + deck preview ────────────────────────────────────────
+
+let pptxInstructionsDirty = false;
+let pptxCurrentDeckSpec = null;
+let pptxCurrentDeckAt = null;
+
+async function loadPptxData() {
+  if (!current) return;
+  const sid = current.session.id;
+  try {
+    const resp = await fetch(`/v1/sessions/${sid}/pptx-instructions`);
+    const data = await resp.json();
+    document.getElementById('pptx-instructions-input').value = data.instructions || '';
+    pptxInstructionsDirty = false;
+    pptxCurrentDeckSpec = data.deck_spec;
+    pptxCurrentDeckAt = data.deck_spec_at;
+    renderDeckPreview(data.deck_spec, data.deck_spec_at);
+  } catch(e) {
+    console.error('loadPptxData:', e);
+  }
+}
+
+function renderDeckPreview(deckSpec, deckAt) {
+  const previewEl = document.getElementById('pptx-deck-preview');
+  const noDeckEl = document.getElementById('pptx-no-deck');
+  const list = document.getElementById('pptx-slides-list');
+  const ageEl = document.getElementById('pptx-deck-age');
+
+  if (!deckSpec || !deckSpec.slides || deckSpec.slides.length === 0) {
+    previewEl.style.display = 'none';
+    noDeckEl.style.display = 'block';
+    return;
+  }
+
+  list.innerHTML = '';
+  deckSpec.slides.forEach(slide => {
+    const li = document.createElement('li');
+    const title = slide.slots?.title || '(sans titre)';
+    const layout = slide.layout || '?';
+    let detail = '';
+    if (slide.slots?.bullets?.length) detail = ` — ${slide.slots.bullets.length} bullet${slide.slots.bullets.length > 1 ? 's' : ''}`;
+    else if (slide.slots?.body) detail = ` — "${slide.slots.body.slice(0, 60)}${slide.slots.body.length > 60 ? '…' : ''}"`;
+    const codeEl = document.createElement('code');
+    codeEl.style.cssText = 'font-size:.8em; opacity:.6;';
+    codeEl.textContent = layout;
+    const strongEl = document.createElement('strong');
+    strongEl.textContent = title;
+    li.appendChild(codeEl);
+    li.appendChild(document.createTextNode(' — '));
+    li.appendChild(strongEl);
+    if (detail) li.appendChild(document.createTextNode(detail));
+    list.appendChild(li);
+  });
+
+  if (deckAt) {
+    const age = Math.round((Date.now() / 1000 - deckAt) / 60);
+    ageEl.textContent = age < 2 ? 'Généré à l\'instant' : `Généré il y a ${age} min`;
+  }
+
+  previewEl.style.display = 'block';
+  noDeckEl.style.display = 'none';
+  // Hide download button — only show it after generating in the current session
+  document.getElementById('btn-dl-pptx').style.display = 'none';
+}
+
+async function savePptxInstructions() {
+  if (!current) return;
+  const sid = current.session.id;
+  const instructions = document.getElementById('pptx-instructions-input').value;
+  try {
+    const resp = await fetch(`/v1/sessions/${sid}/pptx-instructions`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({instructions}),
+    });
+    if (!resp.ok) throw new Error((await resp.json()).error);
+    pptxInstructionsDirty = false;
+    const saved = document.getElementById('pptx-instructions-saved');
+    saved.style.display = 'inline';
+    setTimeout(() => { saved.style.display = 'none'; }, 2000);
+  } catch(e) {
+    toast('Erreur : ' + e.message, true);
+  }
+}
+
+async function generatePptx(event) {
+  if (!current) return;
+  // Auto-save instructions if dirty
+  if (pptxInstructionsDirty) await savePptxInstructions();
+
+  const sid = current.session.id;
+  const btn = event.target;
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Génération en cours…';
+
+  try {
+    const startResp = await fetch(`/v1/sessions/${sid}/export/pptx`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({}),
+    });
+    const startData = await startResp.json();
+    if (startData.status === 'error') throw new Error(startData.error);
+
+    let status = 'running';
+    let attempts = 0;
+    const MAX_ATTEMPTS = 60; // 2.5s * 60 = 2.5 min cap
+    while ((status === 'running' || status === 'started') && attempts < MAX_ATTEMPTS) {
+      await new Promise(r => setTimeout(r, 2500));
+      attempts++;
+      const pollResp = await fetch(`/v1/sessions/${sid}/export/pptx/status`);
+      const pollData = await pollResp.json();
+      status = pollData.status;
+      if (status === 'error') throw new Error(pollData.error || 'Export échoué');
+      if (status !== 'running' && status !== 'started' && status !== 'done') {
+        throw new Error(`Statut inattendu: ${status}`);
+      }
+    }
+    if (attempts >= MAX_ATTEMPTS) throw new Error('Timeout: génération PPTX trop longue');
+
+    if (status === 'done') {
+      // Reload deck_spec from DB (updated by server)
+      await loadPptxData();
+      document.getElementById('btn-dl-pptx').style.display = 'inline-block';
+      toast('PPTX généré');
+    }
+  } catch(e) {
+    toast('Erreur PPTX : ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+}
+
+function downloadPptx() {
+  if (!current) return;
+  const sid = current.session.id;
+  const a = document.createElement('a');
+  a.href = `/v1/sessions/${sid}/export/pptx/download`;
+  a.download = `mimir-${sid}.pptx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 function exportPdf() {
