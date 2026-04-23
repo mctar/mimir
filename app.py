@@ -15,7 +15,7 @@ import aiohttp
 
 import db
 import stt_worker
-from stt_worker import configure_stt, get_stt_config
+from stt_worker import configure_stt, configure_stt_fallback, get_stt_config
 from reconciler import GraphReconciler
 
 # ─── Load .env ───
@@ -41,6 +41,7 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 
 # ─── Remote STT ───
 STT_SERVER_URL = os.environ.get("STT_SERVER_URL", "https://stt.btrbot.com")
+STT_FALLBACK_URL = os.environ.get("STT_FALLBACK_URL", "")
 
 # LLM fallback chain — ordered list of tiers, tried in order.
 # First tier is primary; each subsequent tier is a fallback.
@@ -281,8 +282,12 @@ def _next_seq() -> int:
 async def lifespan(app: FastAPI):
     await db.init_db()
     # Default STT backend
-    configure_stt("remote")
-    print(f"  STT: faster-whisper (localhost:8766)")
+    configure_stt("remote", remote_url=STT_SERVER_URL)
+    if STT_FALLBACK_URL:
+        configure_stt_fallback(STT_FALLBACK_URL)
+        print(f"  STT: {STT_SERVER_URL} (fallback: {STT_FALLBACK_URL})")
+    else:
+        print(f"  STT: {STT_SERVER_URL}")
     asyncio.create_task(broadcast_loop())
     asyncio.create_task(snapshot_loop())
     print(f"  Server ready — audio arrives from browser via WebSocket")
