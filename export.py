@@ -747,7 +747,7 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
     )
 
     # Persist deck_spec
-    served_model = chain[0]["model"] if chain else "unknown"
+    served_model = chain[0]["model"]
     await db.save_deck_spec(session_id, deck_spec, served_model)
 
     # Assemble PPTX
