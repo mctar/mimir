@@ -916,7 +916,9 @@ async def start_export(session_id: str, fmt: str, request: Request):
                     max_hold=body.get("max_hold", 3.0),
                 )
             elif fmt == "pptx":
-                await export_pptx(session_id, outfile)
+                with _llm_chain_lock:
+                    chain = [dict(t) for t in _llm_chain]
+                await export_pptx(session_id, outfile, chain=chain)
             else:
                 with _llm_chain_lock:
                     chain = [dict(t) for t in _llm_chain]
@@ -957,6 +959,31 @@ async def download_export(session_id: str, fmt: str):
         media_type=media,
         filename=f"mimir-{session_id}.{ext}",
     )
+
+
+@app.get("/v1/sessions/{session_id}/pptx-instructions")
+async def get_pptx_instructions(session_id: str):
+    """Get persisted pptx_instructions and current deck_spec for a session."""
+    pptx_data = await db.get_pptx_data(session_id)
+    if pptx_data is None:
+        return JSONResponse({"instructions": None, "deck_spec": None, "deck_spec_at": None})
+    return JSONResponse({
+        "instructions": pptx_data["instructions"],
+        "deck_spec": pptx_data["deck_spec"],
+        "deck_spec_at": pptx_data["deck_spec_at"],
+    })
+
+
+@app.put("/v1/sessions/{session_id}/pptx-instructions")
+async def save_pptx_instructions(session_id: str, request: Request):
+    """Save pptx_instructions for a session (requires a recap to exist)."""
+    body = await request.json()
+    instructions = body.get("instructions", "")
+    recap = await db.get_recap(session_id)
+    if not recap:
+        return JSONResponse({"error": "No recap found. Generate a recap first."}, status_code=400)
+    await db.save_pptx_instructions(session_id, instructions)
+    return JSONResponse({"ok": True})
 
 
 @app.get("/v1/sessions/{session_id}")
