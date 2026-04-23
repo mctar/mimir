@@ -3048,7 +3048,15 @@ function renderDeckPreview(deckSpec, deckAt) {
     let detail = '';
     if (slide.slots?.bullets?.length) detail = ` — ${slide.slots.bullets.length} bullet${slide.slots.bullets.length > 1 ? 's' : ''}`;
     else if (slide.slots?.body) detail = ` — "${slide.slots.body.slice(0, 60)}${slide.slots.body.length > 60 ? '…' : ''}"`;
-    li.innerHTML = `<code style="font-size:.8em; opacity:.6;">${layout}</code> — <strong>${title}</strong>${detail}`;
+    const codeEl = document.createElement('code');
+    codeEl.style.cssText = 'font-size:.8em; opacity:.6;';
+    codeEl.textContent = layout;
+    const strongEl = document.createElement('strong');
+    strongEl.textContent = title;
+    li.appendChild(codeEl);
+    li.appendChild(document.createTextNode(' — '));
+    li.appendChild(strongEl);
+    if (detail) li.appendChild(document.createTextNode(detail));
     list.appendChild(li);
   });
 
@@ -3102,13 +3110,20 @@ async function generatePptx(event) {
     if (startData.status === 'error') throw new Error(startData.error);
 
     let status = 'running';
-    while (status === 'running' || status === 'started') {
+    let attempts = 0;
+    const MAX_ATTEMPTS = 60; // 2.5s * 60 = 2.5 min cap
+    while ((status === 'running' || status === 'started') && attempts < MAX_ATTEMPTS) {
       await new Promise(r => setTimeout(r, 2500));
+      attempts++;
       const pollResp = await fetch(`/v1/sessions/${sid}/export/pptx/status`);
       const pollData = await pollResp.json();
       status = pollData.status;
       if (status === 'error') throw new Error(pollData.error || 'Export échoué');
+      if (status !== 'running' && status !== 'started' && status !== 'done') {
+        throw new Error(`Statut inattendu: ${status}`);
+      }
     }
+    if (attempts >= MAX_ATTEMPTS) throw new Error('Timeout: génération PPTX trop longue');
 
     if (status === 'done') {
       // Reload deck_spec from DB (updated by server)
