@@ -650,17 +650,15 @@ async def generate_deck_spec(
     Returns the deck_spec dict. Retries once on invalid JSON.
     Raises RuntimeError if all tiers fail.
     """
-    import json as _json
-
     # Truncate transcript — keep tail (most recent content is most relevant)
     max_transcript = 8000
     if len(transcript) > max_transcript:
         transcript = "[...]\n" + transcript[-max_transcript:]
 
     def _build_user_prompt(reminder: str = "") -> str:
-        parts = [f"TRANSCRIPT :\n{transcript}", f"RÉCAP :\n{_json.dumps(recap, ensure_ascii=False, indent=2)}"]
+        parts = [f"TRANSCRIPT :\n{transcript}", f"RÉCAP :\n{json.dumps(recap, ensure_ascii=False, indent=2)}"]
         if current_deck_spec:
-            parts.append(f"DECK ACTUEL :\n{_json.dumps(current_deck_spec, ensure_ascii=False, indent=2)}")
+            parts.append(f"DECK ACTUEL :\n{json.dumps(current_deck_spec, ensure_ascii=False, indent=2)}")
         if instructions and instructions.strip():
             parts.append(f"INSTRUCTIONS :\n{instructions.strip()}")
         if reminder:
@@ -680,16 +678,16 @@ async def generate_deck_spec(
                 # Strip markdown fences if present
                 raw = raw.strip()
                 if raw.startswith("```"):
-                    raw = re.sub(r"^```[a-z]*\n?", "", raw)
+                    raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
                     raw = re.sub(r"\n?```$", "", raw)
                     raw = raw.strip()
-                spec = _json.loads(raw)
+                spec = json.loads(raw)
                 # Enforce max slides
                 if len(spec.get("slides", [])) > 15:
                     logger.warning(f"generate_deck_spec: {len(spec['slides'])} slides, truncating to 15")
                     spec["slides"] = spec["slides"][:15]
                 return spec
-            except _json.JSONDecodeError as e:
+            except json.JSONDecodeError as e:
                 logger.warning(f"generate_deck_spec attempt {attempt+1}: JSON parse error — {e}")
                 last_error = e
                 break  # retry with reminder

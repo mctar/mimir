@@ -225,3 +225,86 @@ def test_generate_deck_spec_retries_on_invalid_json():
 
     assert call_count["n"] == 2
     assert result["slides"][0]["layout"] == "bullets"
+
+
+def test_generate_deck_spec_multi_tier_fallback():
+    """Si le tier 1 échoue (exception réseau), le tier 2 est utilisé."""
+    import export as exp
+    import unittest.mock as mock
+    import json
+
+    valid_spec = {"schema_version": 1, "slides": [{"layout": "cover", "slots": {"title": "Fallback", "date": "", "duration": ""}}]}
+    call_count = {"n": 0}
+
+    async def fake_call(tier, system, user):
+        call_count["n"] += 1
+        if tier["provider"] == "failing":
+            raise RuntimeError("network error")
+        return json.dumps(valid_spec)
+
+    chain = [{"provider": "failing", "model": "bad"}, {"provider": "ok", "model": "good"}]
+    with mock.patch.object(exp, "_llm_call_slides", fake_call):
+        result = asyncio.run(
+            exp.generate_deck_spec(
+                transcript="Texte",
+                recap={},
+                instructions=None,
+                current_deck_spec=None,
+                chain=chain,
+            )
+        )
+
+    assert result["slides"][0]["layout"] == "cover"
+    assert call_count["n"] == 2  # tier 1 failed, tier 2 succeeded
+
+
+def test_generate_deck_spec_truncates_slides_to_15():
+    """Un deck de plus de 15 slides est tronqué à 15."""
+    import export as exp
+    import unittest.mock as mock
+    import json
+
+    slides = [{"layout": "bullets", "slots": {"title": f"Slide {i}", "bullets": []}} for i in range(20)]
+    oversized_spec = {"schema_version": 1, "slides": slides}
+
+    async def fake_call(tier, system, user):
+        return json.dumps(oversized_spec)
+
+    with mock.patch.object(exp, "_llm_call_slides", fake_call):
+        result = asyncio.run(
+            exp.generate_deck_spec(
+                transcript="Texte",
+                recap={},
+                instructions=None,
+                current_deck_spec=None,
+                chain=[{"provider": "test", "model": "test"}],
+            )
+        )
+
+    assert len(result["slides"]) == 15
+
+
+def test_generate_deck_spec_strips_markdown_fence():
+    """Un JSON enveloppé dans des fences markdown est correctement parsé."""
+    import export as exp
+    import unittest.mock as mock
+    import json
+
+    spec = {"schema_version": 1, "slides": [{"layout": "bullets", "slots": {"title": "Fenced", "bullets": ["a"]}}]}
+
+    async def fake_call(tier, system, user):
+        return f"```json\n{json.dumps(spec)}\n```"
+
+    with mock.patch.object(exp, "_llm_call_slides", fake_call):
+        result = asyncio.run(
+            exp.generate_deck_spec(
+                transcript="Texte",
+                recap={},
+                instructions=None,
+                current_deck_spec=None,
+                chain=[{"provider": "test", "model": "test"}],
+            )
+        )
+
+    assert result["slides"][0]["layout"] == "bullets"
+    assert result["slides"][0]["slots"]["title"] == "Fenced"
