@@ -132,6 +132,20 @@ async def init_db(path: str = DB_PATH):
     """)
     await _db.commit()
 
+    # Add pptx columns to recaps (idempotent)
+    cursor = await _db.execute("PRAGMA table_info(recaps)")
+    recap_cols = {row[1] for row in await cursor.fetchall()}
+    pptx_migrations = [
+        ("pptx_instructions", "TEXT"),
+        ("deck_spec_json",     "TEXT"),
+        ("deck_spec_model",    "TEXT"),
+        ("deck_spec_at",       "REAL"),
+    ]
+    for col_name, col_def in pptx_migrations:
+        if col_name not in recap_cols:
+            await _db.execute(f"ALTER TABLE recaps ADD COLUMN {col_name} {col_def}")
+    await _db.commit()
+
     logger.info(f"DB initialized: {path}")
     return _db
 
@@ -322,6 +336,44 @@ async def get_recap(session_id: str) -> dict | None:
         "model": row["model"],
         "created_at": row["created_at"],
     }
+
+
+async def get_pptx_data(session_id: str) -> dict | None:
+    """Get pptx_instructions and deck_spec for a session, if any recap exists."""
+    cursor = await _db.execute(
+        "SELECT pptx_instructions, deck_spec_json, deck_spec_model, deck_spec_at "
+        "FROM recaps WHERE session_id = ?",
+        (session_id,),
+    )
+    row = await cursor.fetchone()
+    if not row:
+        return None
+    return {
+        "instructions": row["pptx_instructions"],
+        "deck_spec": json.loads(row["deck_spec_json"]) if row["deck_spec_json"] else None,
+        "deck_spec_model": row["deck_spec_model"],
+        "deck_spec_at": row["deck_spec_at"],
+    }
+
+
+async def save_pptx_instructions(session_id: str, instructions: str) -> None:
+    """Persist pptx_instructions for a session (requires recap row to exist)."""
+    await _db.execute(
+        "UPDATE recaps SET pptx_instructions = ? WHERE session_id = ?",
+        (instructions, session_id),
+    )
+    await _db.commit()
+
+
+async def save_deck_spec(session_id: str, deck_spec: dict, model: str) -> None:
+    """Persist deck_spec and generation metadata for a session."""
+    import time as _time
+    await _db.execute(
+        "UPDATE recaps SET deck_spec_json = ?, deck_spec_model = ?, deck_spec_at = ? "
+        "WHERE session_id = ?",
+        (json.dumps(deck_spec), model, _time.time(), session_id),
+    )
+    await _db.commit()
 
 
 async def get_session_snapshots(session_id: str) -> list[dict]:
