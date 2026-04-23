@@ -548,6 +548,9 @@ def _copy_slide_from_template(
 ) -> None:
     """Add a slide to prs by copying slide[slide_idx] from tmpl, then filling content.
 
+    Copies the full spTree XML and all OPC relationships (images, OLE objects, tags)
+    from the source slide, remapping rIds to avoid dangling references in the new slide.
+
     Args:
         prs: target Presentation (being assembled)
         tmpl: source Presentation (template loaded separately)
@@ -556,8 +559,11 @@ def _copy_slide_from_template(
         cards: list of {"heading": str, "content": str} dicts
     """
     import copy as _copy
+    import re
+    from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 
     src = tmpl.slides[slide_idx]
+    src_part = src.part
 
     # Find matching layout in prs by name
     src_layout_name = src.slide_layout.name
@@ -566,12 +572,47 @@ def _copy_slide_from_template(
         prs.slide_layouts[35],
     )
     new_slide = prs.slides.add_slide(matching_layout)
+    new_part = new_slide.part
 
-    # Replace the slide's spTree with the template slide's spTree
+    # Copy all non-layout relationships from src to new_slide, building rId remap.
+    # Reuse parts already present in prs (same partname) to avoid duplicate ZIP entries.
+    slide_layout_reltypes = {
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout",
+    }
+    # Build a map of existing parts in prs to avoid duplicate ZIP entries
+    prs_parts = {str(p.partname): p for p in new_part.package.iter_parts()}
+    rId_map = {}
+    for rId, rel in src_part.rels.items():
+        if rel.reltype in slide_layout_reltypes:
+            continue  # layout already set by add_slide
+        try:
+            # Prefer an existing part at the same path to avoid duplicate ZIP entries
+            target = prs_parts.get(str(rel.target_part.partname), rel.target_part)
+            new_rId = new_part.relate_to(target, rel.reltype)
+            rId_map[rId] = new_rId
+        except Exception:
+            # Skip relationships that can't be copied (e.g. external refs)
+            pass
+
+    # Deep-copy the spTree XML from source
+    sp_tree_copy = _copy.deepcopy(src.shapes._spTree)
+
+    # Remap all r:id and r:embed attribute values using rId_map
+    if rId_map:
+        xml_bytes = sp_tree_copy.xml.encode("utf-8")
+        for old_rId, new_rId in rId_map.items():
+            xml_bytes = xml_bytes.replace(
+                f'"{old_rId}"'.encode(),
+                f'"{new_rId}"'.encode(),
+            )
+        from lxml import etree
+        sp_tree_copy = etree.fromstring(xml_bytes)
+
+    # Replace the new slide's spTree with the remapped copy
     sp_tree = new_slide.shapes._spTree
     for child in list(sp_tree):
         sp_tree.remove(child)
-    for child in src.shapes._spTree:
+    for child in sp_tree_copy:
         sp_tree.append(_copy.deepcopy(child))
 
     # Update title
