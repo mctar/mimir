@@ -3067,6 +3067,8 @@ function renderDeckPreview(deckSpec, deckAt) {
 
   previewEl.style.display = 'block';
   noDeckEl.style.display = 'none';
+  // Hide download button — only show it after generating in the current session
+  document.getElementById('btn-dl-pptx').style.display = 'none';
 }
 
 async function savePptxInstructions() {
