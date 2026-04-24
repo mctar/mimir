@@ -574,17 +574,20 @@ def _copy_slide_from_template(
     new_slide = prs.slides.add_slide(matching_layout)
     new_part = new_slide.part
 
-    # Copy all non-layout relationships from src to new_slide, building rId remap.
+    # Copy all non-layout, non-tag relationships from src to new_slide, building rId remap.
     # Reuse parts already present in prs (same partname) to avoid duplicate ZIP entries.
-    slide_layout_reltypes = {
+    # Tags (think-cell slide metadata) are slide-specific and must not be shared between
+    # slides; skipping them here prevents PPTX corruption.
+    _skip_reltypes = {
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout",
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/tags",
     }
     # Build a map of existing parts in prs to avoid duplicate ZIP entries
     prs_parts = {str(p.partname): p for p in new_part.package.iter_parts()}
     rId_map = {}
     for rId, rel in src_part.rels.items():
-        if rel.reltype in slide_layout_reltypes:
-            continue  # layout already set by add_slide
+        if rel.reltype in _skip_reltypes:
+            continue  # layout already set by add_slide; tags are slide-specific
         try:
             # Prefer an existing part at the same path to avoid duplicate ZIP entries
             target = prs_parts.get(str(rel.target_part.partname), rel.target_part)
@@ -596,6 +599,15 @@ def _copy_slide_from_template(
 
     # Deep-copy the spTree XML from source
     sp_tree_copy = _copy.deepcopy(src.shapes._spTree)
+
+    # Remove <p:tags> elements from <p:custDataLst> within the spTree copy.
+    # These are think-cell identifiers stored inside shape custom-data; they reference
+    # the tag relationship (now skipped above) and would create dangling rId refs.
+    _P_CUSTDATALST = '{http://schemas.openxmlformats.org/presentationml/2006/main}custDataLst'
+    _P_TAGS = '{http://schemas.openxmlformats.org/presentationml/2006/main}tags'
+    for cust in list(sp_tree_copy.iter(_P_CUSTDATALST)):
+        for tag_elem in list(cust.findall(_P_TAGS)):
+            cust.remove(tag_elem)
 
     # Remap all r:id and r:embed attribute values using rId_map
     if rId_map:
@@ -695,11 +707,22 @@ _LAYOUT_CATALOG_STR = "\n".join(
 )
 
 
+def _clear_slides(prs) -> None:
+    """Remove all existing slides from a Presentation, keeping slide layouts and masters."""
+    from pptx.oxml.ns import qn
+    sldIdLst = prs.slides._sldIdLst
+    for sldId in list(sldIdLst):
+        rId = sldId.get(qn("r:id"))
+        prs.part.drop_rel(rId)
+        sldIdLst.remove(sldId)
+
+
 def _assemble_pptx(deck_spec: dict, output: str) -> None:
     """Assemble a .pptx file deterministically from a deck_spec dict."""
     from pptx import Presentation
 
     prs = Presentation(PPTX_TEMPLATE)
+    _clear_slides(prs)
 
     _COPY_SLIDE_LAYOUTS = {"cards-3", "cards-4", "cards-5", "cards-4-rounded"}
     tmpl = Presentation(PPTX_TEMPLATE)  # source for copy-slide layouts
