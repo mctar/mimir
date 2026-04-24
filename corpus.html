@@ -441,9 +441,9 @@
             return res.json();
           })
           .then(function (data) {
-            // Accept array at root or { documents: [...] } / { data: [...] }
+            // Accept array at root or { documents: [...] } / { docs: [...] } / { data: [...] }
             var docs = Array.isArray(data) ? data
-                       : (data.documents || data.data || []);
+                       : (data.documents || data.docs || data.data || []);
             renderTable(docs);
           })
           .catch(function (err) {

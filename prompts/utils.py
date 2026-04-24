@@ -38,20 +38,33 @@ VOCABULARY_HINTS = (
     "FTE, CXO, GEB, CMD, Capital Markets Day, Comex, "
     # Deals & projets
     "Valor, Marvel, "
-    # Personnes (participants Day 1 IO + corpus)
-    "Aiman Ezzat, Franck Greverie, Fernando Alvarez, Oliver Pfeil, "
-    "Keshav Murugesh, CP Duggal, Selva Vaidyanathan, "
-    "Volker Darius, Kevin Campbell, Rob Walker, Kartik Ramakrishnan, "
-    "Anirban Bose, Roshan Gya, "
+    # Personnes (participants Day 1 IO + GEB + executive committee)
+    # GEB
+    "Aiman Ezzat, Fernando Alvarez, Nive Bhagat, Anirban Bose, "
+    "Karine Brunet, Andrea Falleni, Cyril Garcia, Franck Greverie, "
+    "Roshan Gya, Anne Lebel, Kartik Ramakrishnan, Michael Schulte, Jérôme Simeon, "
+    # Extended exec committee
+    "Pascal Brier, Kevin Campbell, Inma Casero, Sanjay Chalke, Volker Darius, "
+    "Steffen Elsaesser, Patrick Ferraris, Stephen Hilton, Olivier Lepick, "
+    "Ted Levine, Karine Marchat, Paul Margetts, Fabrice Mariaud, Rainer Mehl, "
+    "Keshav Murugesh, Sarika Naik, Rajnish Nath, Niraj Parihar, Maria Pernas, "
+    "Oliver Pfeil, Béatrice Speisser, Shin Tonomura, Volkmar Varnhagen, Jeroen Versteeg, "
+    # Day 1 IO session additional (WNS executives, other participants)
+    "CP Duggal, Selva Vaidyanathan, Rob Walker, "
     "Bhavesh, Jon Bell, Babu Mauze, "
     # Infra Mímir
     "Mímir, Ollama, FastAPI, DGX Spark, Parakeet, Canary, NeMo, Whisper, Anthropic, Gemini."
 )
 
 WHISPER_DEFAULT_PROMPT = (
-    "Session de travail Capgemini Invent Day 1 sur l'Intelligent Operations (IOPS), "
-    "avec le GEB et l'executive committee. Discussion stratégique sur le positionnement "
-    "de Capgemini Invent, l'acquisition de WNS, les deals Valor et Marvel, "
-    "l'IA agentique (Agentic AI), le modèle Transform-then-Run, la valeur outcome-based, "
-    "et la proposition de valeur pour le Capital Markets Day."
+    "Capgemini Invent Day 1 strategic working session on Intelligent Operations (IOPS). "
+    "Agenda: align on positioning (what to sell, why now, why well-positioned, to whom) "
+    "and value proposition (what we do, how we do it, how we get paid). "
+    "Key topics: Transform-and-Run, Value game step-up, Asset/IP-led services, "
+    "Front/Core/Back, market inflexion, transformation renewal, IOPs market momentum, "
+    "agentic operations, Tri-pod (Transfo x Industry x Tech), orchestrator and neutral partner, "
+    "CXO play, customer tier, client archetypes, value engine, E2E operational reinvention, "
+    "static-to-dynamic services, evolution vs disruption, deals anatomy, "
+    "capabilities aggregation, Value/Risks/Cash model, shared accountability. "
+    "WNS acquisition context, deals Valor and Marvel, Capital Markets Day preparation."
 )

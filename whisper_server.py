@@ -29,7 +29,7 @@ COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
 
 # Default language when the client sends "" or "auto".
 # Set to "" to keep auto-detection.
-DEFAULT_LANGUAGE = "fr"
+DEFAULT_LANGUAGE = "en"
 
 logger.info(f"Loading Whisper model '{MODEL_SIZE}' on {DEVICE} ({COMPUTE_TYPE})...")
 model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
