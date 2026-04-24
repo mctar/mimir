@@ -63,7 +63,7 @@ EXTRACTION & SYNTHESIS RULES (STRICT)
 - If a hint is not discussed, do not mention it
 - If relevant content does not map cleanly to a hint but clearly answers the sub-question, include it
 - If a full sub-question is not addressed at all, return an empty list
-- Do not invent, infer, extrapolate, or speculate beyond what is explicitly stated in the transcript. If in doubt, return []. An empty list is preferable to a fabricated insight.
+- Do not invent, infer, extrapolate, or speculate beyond what is explicitly stated in the transcript. If in doubt, return [] — see MANDATORY SELF-REVIEW below.
 
 ADDITIONAL REQUIRED OUTPUTS
 In addition to the structured analysis, generate:
@@ -86,8 +86,8 @@ For each bullet you have written, remove it if:
   • It could appear in any consulting firm's slide deck
   • It uses vague verbs (leverage, accelerate, enable, optimize) without specifying what changes
   • It states a fact without naming an implication, risk, or decision
-After filtering, if a sub-question list is empty, return []. An empty list is always
-preferable to a fabricated or generic insight.
+After filtering, if a sub-question list is empty, return []. An empty list is preferable
+to a fabricated or generic insight.
 
 Return ONLY valid JSON with this exact structure:
 {
