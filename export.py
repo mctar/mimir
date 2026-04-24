@@ -15,6 +15,7 @@ Prerequisites:
 """
 
 import argparse, asyncio, json, os, re, subprocess, sys, tempfile
+from datetime import datetime
 
 from log import logger
 import aiohttp
@@ -100,7 +101,6 @@ def find_peak_snapshot(snapshots: list[dict]) -> dict:
 
 
 def format_date(ts: float) -> str:
-    from datetime import datetime
     return datetime.fromtimestamp(ts).strftime("%d %B %Y")
 
 
@@ -837,7 +837,7 @@ def _build_v3_fixed_slides(recap: dict, session_topic: str, session_date: str) -
             "slots": {
                 "title": session_topic,
                 "date": session_date,
-                "duration": f"{int(recap.get('transcript_stats', {}).get('duration_minutes', 0))} min",
+                "duration": f"{int(recap.get('transcript_stats', {}).get('duration_minutes') or 0)} min",
             },
         },
         {
@@ -886,7 +886,7 @@ async def generate_deck_spec(
     instructions: str | None,
     current_deck_spec: dict | None,
     chain: list[dict],
-    session_topic: str = "Intelligent Operations – Day 1",
+    session_topic: str = "",
     session_date: str = "",
 ) -> dict:
     """Call LLM to generate or update a deck_spec from transcript + recap + instructions.
@@ -933,7 +933,7 @@ async def generate_deck_spec(
                     extra_slides = extra.get("slides", [])
                     # Cap: 5 fixed + at most 1 optional = 6 total
                     if extra_slides:
-                        fixed_slides.append(extra_slides[0])
+                        fixed_slides = fixed_slides + [extra_slides[0]]
                     parsed_ok = True
                     break
                 except json.JSONDecodeError as e:
@@ -1035,9 +1035,8 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
           f"transcript={len(transcript)} chars instructions={'yes' if instructions else 'no'} "
           f"deck_spec={'update' if current_deck_spec else 'new'}")
 
-    from datetime import datetime as _datetime
     try:
-        session_date = _datetime.fromtimestamp(float(session.get("created_at", 0))).strftime("%d %B %Y")
+        session_date = datetime.fromtimestamp(float(session.get("created_at", 0))).strftime("%d %B %Y")
     except Exception:
         session_date = ""
 
