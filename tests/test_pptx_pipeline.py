@@ -457,3 +457,66 @@ def test_assemble_pptx_cards4_rounded(tmp_path):
     )
     assert "Étape 2" in all_text
     assert "Description étape 4" in all_text
+
+
+def test_cards_no_shared_tags(tmp_path):
+    """No tag file should be referenced by more than one slide (shared tags corrupt PPTX)."""
+    import zipfile
+    from collections import defaultdict
+    from xml.etree import ElementTree as ET
+    import export as exp
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {"layout": "cards-3", "slots": {"title": "T1", "cards": [
+                {"heading": "A", "content": "a"},
+                {"heading": "B", "content": "b"},
+                {"heading": "C", "content": "c"},
+            ]}},
+            {"layout": "cards-4", "slots": {"title": "T2", "cards": [
+                {"heading": "A", "content": "a"},
+                {"heading": "B", "content": "b"},
+                {"heading": "C", "content": "c"},
+                {"heading": "D", "content": "d"},
+            ]}},
+        ],
+    }
+    output = str(tmp_path / "no_shared_tags.pptx")
+    exp._assemble_pptx(deck_spec, output)
+
+    TAGS_RELTYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/tags"
+    NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+    tag_owners = defaultdict(list)
+    with zipfile.ZipFile(output) as z:
+        for name in z.namelist():
+            if "slides/_rels/" in name:
+                tree = ET.fromstring(z.read(name))
+                for rel in tree.findall(f"{{{NS}}}Relationship"):
+                    if rel.get("Type") == TAGS_RELTYPE:
+                        tag_owners[rel.get("Target")].append(name)
+
+    for tag, owners in tag_owners.items():
+        assert len(owners) == 1, f"Tag {tag} shared by {len(owners)} slides: {owners}"
+
+
+def test_assemble_pptx_no_template_slides(tmp_path):
+    """Le PPTX généré ne doit contenir QUE les slides du deck_spec, pas les slides template."""
+    import export as exp
+    from pptx import Presentation
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {"layout": "cover", "slots": {"title": "Mon titre", "date": "2026-04-24"}},
+            {"layout": "bullets", "slots": {"title": "Points clés", "bullets": ["Point A", "Point B"]}},
+        ],
+    }
+    output = str(tmp_path / "no_template.pptx")
+    exp._assemble_pptx(deck_spec, output)
+
+    prs = Presentation(output)
+    assert len(prs.slides) == 2, (
+        f"Expected 2 slides (one per deck_spec entry), got {len(prs.slides)}. "
+        "Template Lorem-ipsum slides are leaking into the output."
+    )
