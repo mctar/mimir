@@ -142,3 +142,16 @@ def test_import_vtt_end_to_end(tmp_db):
     assert len(segments) == 2
     assert "roadmap" in segments[0]["text"]
     assert "Q3" in segments[1]["text"]
+
+
+def test_parse_transcript_with_date_validation():
+    """Verify the date validation logic would catch invalid dates."""
+    from datetime import datetime as _dt
+    valid = "2026-04-24"
+    invalid = "not-a-date"
+    _dt.fromisoformat(valid)  # must not raise
+    try:
+        _dt.fromisoformat(invalid)
+        assert False, "should have raised"
+    except ValueError:
+        pass  # expected

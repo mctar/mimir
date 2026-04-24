@@ -630,7 +630,10 @@ async def unarchive_sessions(request: Request):
 @app.post("/v1/sessions/import")
 async def import_transcript(request: Request):
     """Create a new session from an externally-provided transcript (plain text or VTT)."""
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
     topic = (body.get("topic") or "").strip()
     date_str = (body.get("date") or "").strip()
     raw = (body.get("transcript") or "").strip()
@@ -639,6 +642,8 @@ async def import_transcript(request: Request):
         return JSONResponse({"error": "topic is required"}, status_code=400)
     if not raw:
         return JSONResponse({"error": "transcript is required"}, status_code=400)
+    if len(raw) > 5_000_000:
+        return JSONResponse({"error": "Transcript exceeds 5 MB limit"}, status_code=400)
 
     cleaned = _parse_transcript(raw)
     if not cleaned:
@@ -650,7 +655,10 @@ async def import_transcript(request: Request):
             from datetime import datetime as _dt
             base_ts = _dt.fromisoformat(date_str).timestamp()
         except ValueError:
-            pass
+            return JSONResponse(
+                {"error": f"Invalid date: {date_str!r} — use ISO 8601 (e.g. 2026-04-24)"},
+                status_code=400,
+            )
 
     parts = _split_segments(cleaned)
     session_id = str(uuid.uuid4())[:8]
