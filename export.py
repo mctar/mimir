@@ -919,6 +919,7 @@ async def generate_deck_spec(
         for attempt in range(2):
             reminder = "" if attempt == 0 else "RAPPEL : output JSON uniquement, aucun texte, aucune fence markdown."
             prompt = v3_user_prompt + ("\n\n" + reminder if reminder else "")
+            parsed_ok = False
             for tier in chain:
                 provider, model = tier["provider"], tier["model"]
                 try:
@@ -933,6 +934,7 @@ async def generate_deck_spec(
                     # Cap: 5 fixed + at most 1 optional = 6 total
                     if extra_slides:
                         fixed_slides.append(extra_slides[0])
+                    parsed_ok = True
                     break
                 except json.JSONDecodeError as e:
                     logger.warning(f"generate_deck_spec V3 attempt {attempt+1}: JSON parse error — {e}")
@@ -940,10 +942,8 @@ async def generate_deck_spec(
                 except Exception as e:
                     logger.warning(f"generate_deck_spec V3 tier {provider}/{model} failed: {e}")
                     continue  # try next tier
-            else:
-                # All tiers failed this attempt — continue to retry loop
-                continue
-            break  # Successfully parsed — exit retry loop
+            if parsed_ok:
+                break  # Successfully parsed — exit retry loop
 
         return {"schema_version": 1, "slides": fixed_slides}
     # ── end V3 ────────────────────────────────────────────────────────────
