@@ -1184,7 +1184,7 @@ async def update_recap(session_id: str, request: Request):
     recap = body.get("recap")
     if not isinstance(recap, dict):
         return JSONResponse({"error": "recap must be an object"}, status_code=400)
-    recap["schema_version"] = recap.get("schema_version", 2)
+    recap["schema_version"] = recap.get("schema_version", 3)
     await db.store_recap(session_id, recap, model="manual")
     return JSONResponse({"recap": recap, "model": "manual", "created_at": time.time()})
 
