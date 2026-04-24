@@ -13,7 +13,7 @@ RULES (non-negotiable):
 - Style: dark, modern, bold. Background: #0C1A2E. Accent: #0058AB.
 - Typography: system fonts only (-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif).
 - Large text, high contrast, minimal clutter — legible from the back of a room.
-- Slide headlines must be declarative assertions: state a conclusion, not a topic.
+- Slide headlines must be declarative assertions, not gerundive descriptions: state a conclusion, not a topic.
   ❌ "Positioning the Organization" → ✅ "The orchestrator role is the primary moat"
 - Slide structure: title, overview/pitch, key points (1 per slide), concepts map,
   non-obvious connections, tensions, conclusion.

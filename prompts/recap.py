@@ -19,11 +19,11 @@ If a bullet does not answer one of these four questions, cut it.
 
 EXAMPLE — THE DIFFERENCE BETWEEN GENERIC AND EXECUTIVE:
 
-REJECT: "Intelligent Operations represents a significant opportunity for Capgemini Invent
+❌ REJECT: "Intelligent Operations represents a significant opportunity for Capgemini Invent
    to leverage its capabilities in the market."
    → No decision, no implication, no differentiation. Any firm could write this.
 
-ACCEPT: "The Transform-then-Run model is the primary moat: owning Run prevents client
+✅ ACCEPT: "The Transform-then-Run model is the primary moat: owning Run prevents client
    attrition once transformation is complete — without it, competitors inherit the relationship."
    → Names the mechanism, the risk if not acted on, and the implication.
 
