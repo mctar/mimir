@@ -30,7 +30,7 @@ AVAILABLE LAYOUTS:
 
 RULES:
 - Choose the most appropriate layout for each slide's content.
-- For "bullets": max 6 items, max 15 words per item.
+- For "bullets": max 6 items, max 20 words per item.
 - For content that naturally splits into parallel elements (categories, themes, steps, dimensions):
   use "cards-3", "cards-4", "cards-5", or "cards-4-rounded" in priority.
   Choose the count based on content richness (3 = synthesis, 4–5 = detail).
@@ -50,8 +50,8 @@ Headlines must be declarative assertions, not gerundive descriptions.
 Bullet content must name a decision, implication, risk, or recommended action.
 Bullets that merely describe a topic (without naming what changes or what is at stake) must be cut.
 
-OUTPUT LANGUAGE: Generate all slide text in the language of the provided recap.
-If the recap is in English, output English. If French, output French.
+OUTPUT LANGUAGE: Default to English.
+Only use another language if the session language field explicitly specifies it (e.g. "fr" → French).
 Layout catalog keys and JSON structure are always in English.
 
 RECOMMENDED STRUCTURE for a Positioning / Value Proposition recap:
@@ -59,7 +59,7 @@ RECOMMENDED STRUCTURE for a Positioning / Value Proposition recap:
 2. bullets/cards — overview of themes covered (optional)
 3. divider       — section separator "POSITIONING" (number "01")
 4. One slide per positioning sub-theme (what_to_sell, why_now, why_well_positioned, to_whom)
-   → Prefer cards-* for parallel lists, bullets for linear items
+   → Prefer cards-* for parallel lists, bullets for linear items. But you can also pick one layout that best fits the content.
 5. quote-large   — positioning statement
 6. divider       — section separator "VALUE PROPOSITION" (number "02")
 7. One slide per value proposition sub-theme (what_we_do, how_we_do_it, how_we_get_paid)
