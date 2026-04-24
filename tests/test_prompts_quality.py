@@ -28,5 +28,4 @@ def test_recap_has_self_review_step():
 
 def test_recap_empty_list_rule():
     """Empty list preference must be stated explicitly."""
-    assert "empty list" in BOARD_RECAP_SYSTEM.lower()
-    assert "preferable" in BOARD_RECAP_SYSTEM.lower()
+    assert "empty list is preferable" in BOARD_RECAP_SYSTEM.lower()
