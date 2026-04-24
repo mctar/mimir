@@ -33,7 +33,7 @@ if os.path.exists(_env_path):
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 ANTHROPIC_AUTH_TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
-ANTHROPIC_SONNET_MODEL = os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-sonnet-4-20250514")
+ANTHROPIC_SONNET_MODEL = os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-opus-4-6")
 
 # ─── Hugin (self-hosted Ollama) ───
 HUGIN_BASE_URL = os.environ.get("HUGIN_BASE_URL", "https://munin.btrbot.com")
@@ -55,16 +55,15 @@ _VALID_PROVIDERS = ("hugin", "gemini", "anthropic")
 
 def _default_chain() -> list[dict]:
     """Build the default LLM fallback chain from whichever providers have
-    credentials configured at startup. Order is: local (Hugin) → Gemini →
-    Anthropic. Anthropic is last-resort because it's the slowest link to
-    reach over the public internet and the most expensive per token."""
+    credentials configured at startup. Order is: local (Hugin) → Anthropic →
+    Gemini. Anthropic is preferred over Gemini for response quality."""
     chain: list[dict] = []
     if HUGIN_BASE_URL:
         chain.append({"provider": "hugin",     "model": "gemma4:26b"})
-    if GEMINI_API_KEY:
-        chain.append({"provider": "gemini",    "model": "gemini-2.5-flash"})
     if ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN:
         chain.append({"provider": "anthropic", "model": ANTHROPIC_SONNET_MODEL})
+    if GEMINI_API_KEY:
+        chain.append({"provider": "gemini",    "model": "gemini-2.5-flash"})
     if not chain:
         # No credentials at all — keep Hugin as a placeholder so the server
         # still boots; calls will fail closed with a clear error.
@@ -1659,7 +1658,8 @@ async def list_llm_providers():
         "anthropic": {
             "label": "Anthropic (Claude)",
             "models": [
-                {"id": "claude-sonnet-4-20250514", "label": "Claude Sonnet 4", "note": "Default"},
+                {"id": "claude-opus-4-6",          "label": "Claude Opus 4.6",  "note": "Default"},
+                {"id": "claude-sonnet-4-20250514",  "label": "Claude Sonnet 4",  "note": ""},
                 {"id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5", "note": "Fast"},
             ],
             "available": bool(ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN),
@@ -1888,10 +1888,11 @@ async def set_active_stt(request: Request):
 # ─── LLM cost tracking ───
 # Pricing per million tokens (input, output)
 _LLM_PRICING = {
-    "claude-sonnet-4-20250514": (3.00, 15.00),
-    "claude-haiku-4-5-20251001": (0.80, 4.00),
-    "gemini-2.5-flash": (0.15, 0.60),
-    "gemini-2.0-flash": (0.10, 0.40),
+    "claude-opus-4-6":           (15.00, 75.00),
+    "claude-sonnet-4-20250514":  ( 3.00, 15.00),
+    "claude-haiku-4-5-20251001": ( 0.80,  4.00),
+    "gemini-2.5-flash":          ( 0.15,  0.60),
+    "gemini-2.0-flash":          ( 0.10,  0.40),
 }
 _DEFAULT_PRICING = (0.0, 0.0)  # self-hosted = free
 
