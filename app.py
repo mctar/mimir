@@ -972,7 +972,9 @@ async def export_status(session_id: str, fmt: str):
     task_key = f"{session_id}_{fmt}"
     info = _export_tasks.get(task_key)
     if not info:
+        logger.info(f"[export] poll {fmt} {session_id} → not_found")
         return JSONResponse({"status": "not_found"}, status_code=404)
+    logger.info(f"[export] poll {fmt} {session_id} → {info['status']}")
     return JSONResponse({"status": info["status"], "error": info.get("error")})
 
 
@@ -1146,7 +1148,9 @@ async def clean_transcript_status(session_id: str):
         job = _clean_jobs.get(session_id)
         snapshot = dict(job) if job else None
     if snapshot is None:
+        logger.info(f"[clean] poll {session_id} → idle")
         return JSONResponse({"status": "idle"})
+    logger.info(f"[clean] poll {session_id} → {snapshot.get('status')} {snapshot.get('progress', '')}")
     return JSONResponse(snapshot)
 
 
