@@ -18,6 +18,7 @@ from log import logger
 import db
 import stt_worker
 from reconciler import GraphReconciler
+from prompts.graph import mindmap_system
 
 
 # ─── Audio Loading ───
@@ -123,22 +124,7 @@ class AnalysisPipeline:
                       for e in cur_graph.get("edges", [])],
         }
 
-        topic_line = f'- Meeting context: "{self.topic}"' if self.topic else ""
-        system = f"""You generate mind-map graphs from meeting transcripts. Return ONLY valid JSON.
-
-Rules:
-- Max {self.max_nodes} nodes. Merge lesser concepts to stay under limit.
-- Node: {{"id":"n1","label":"Short Name","group":"Category"}}
-  - label: 2-4 words, title case
-  - group: broad category for color clustering
-- Edge: {{"source":"n1","target":"n2","label":"verb"}}
-  - label: 1-2 word relationship (e.g. "drives", "enables", "part of")
-- Preserve existing node IDs. Add only genuinely important new concepts.
-- Remove nodes that are no longer relevant as the conversation evolves.
-- Create edges that reveal the STRUCTURE of the discussion, not just proximity.
-{topic_line}
-
-Return: {{"nodes":[...],"edges":[...],"summary":"<2-3 sentence summary of all key points discussed so far>"}}"""
+        system = mindmap_system(self.max_nodes, self.topic)
 
         fresh = self.full_text[self.sent_pos:].strip()
         segment = fresh[-3000:] if len(fresh) > 3000 else fresh
