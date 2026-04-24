@@ -14,6 +14,7 @@ failures on the primary, the worker switches to the fallback automatically.
 import time, threading, os
 import numpy as np
 from log import logger
+from prompts.utils import VOCABULARY_HINTS
 
 SAMPLE_RATE = 16000  # All STT backends expect 16kHz
 
@@ -186,8 +187,7 @@ def _transcribe_backend(audio_arr: np.ndarray, metrics: dict, metrics_lock,
     if language:
         params["language"] = language
     context = _get_context()
-    if context:
-        params["initial_prompt"] = context
+    params["initial_prompt"] = VOCABULARY_HINTS + (" " + context if context else "")
 
     t0 = time.time()
     resp = requests.post(

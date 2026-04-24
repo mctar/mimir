@@ -28,8 +28,30 @@ def qa_assistant_system(has_corpus: bool) -> str:
     )
 
 
+VOCABULARY_HINTS = (
+    # Marques & entités
+    "Capgemini, Capgemini Invent, WNS, Kipi.ai, McKinsey, HFS, Forrester, IDC, ISG, "
+    "Microsoft, Google, AWS, Mistral AI, NVIDIA, Euronext, NYSE, "
+    # Concepts stratégiques IO
+    "Intelligent Operations, IOPS, Agentic AI, Agentic operations, BPO, BPS, "
+    "Digital BPS, hyper-automation, Transform-then-Run, outcome-based, outcomes-based, "
+    "FTE, CXO, GEB, CMD, Capital Markets Day, Comex, "
+    # Deals & projets
+    "Valor, Marvel, "
+    # Personnes (participants Day 1 IO + corpus)
+    "Aiman Ezzat, Franck Greverie, Fernando Alvarez, Oliver Pfeil, "
+    "Keshav Murugesh, CP Duggal, Selva Vaidyanathan, "
+    "Volker Darius, Kevin Campbell, Rob Walker, Kartik Ramakrishnan, "
+    "Anirban Bose, Roshan Gya, "
+    "Bhavesh, Jon Bell, Babu Mauze, "
+    # Infra Mímir
+    "Mímir, Ollama, FastAPI, DGX Spark, Parakeet, Canary, NeMo, Whisper, Anthropic, Gemini."
+)
+
 WHISPER_DEFAULT_PROMPT = (
-    "Discussion en français sur l'intelligence artificielle, "
-    "les modèles de langage, la transcription vocale, les graphes de connaissances, "
-    "Mímir, Whisper, Anthropic, Azure, Ollama, FastAPI."
+    "Session de travail Capgemini Invent Day 1 sur l'Intelligent Operations (IOPS), "
+    "avec le GEB et l'executive committee. Discussion stratégique sur le positionnement "
+    "de Capgemini Invent, l'acquisition de WNS, les deals Valor et Marvel, "
+    "l'IA agentique (Agentic AI), le modèle Transform-then-Run, la valeur outcome-based, "
+    "et la proposition de valeur pour le Capital Markets Day."
 )
