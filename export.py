@@ -630,41 +630,41 @@ def _build_user_prompt(
     parts = []
     if instructions and instructions.strip():
         parts.append(
-            "INSTRUCTIONS (s'appliquent à TOUTES les slides — "
-            "titres, contenus, langue, ton) :\n" + instructions.strip()
+            "INSTRUCTIONS (apply to ALL slides — "
+            "titles, content, language, tone):\n" + instructions.strip()
         )
     if session_topic or session_date:
         ctx = []
         if session_topic:
-            ctx.append(f"Sujet : {session_topic}")
+            ctx.append(f"Topic: {session_topic}")
         if session_date:
-            ctx.append(f"Date : {session_date}")
-        parts.append("CONTEXTE :\n" + "\n".join(ctx))
-    parts.append("RÉCAP :\n" + _format_recap(recap))
-    parts.append("TRANSCRIPT (extrait) :\n" + transcript)
+            ctx.append(f"Date: {session_date}")
+        parts.append("CONTEXT:\n" + "\n".join(ctx))
+    parts.append("RECAP:\n" + _format_recap(recap))
+    parts.append("TRANSCRIPT (excerpt):\n" + transcript)
     if corpus_block:
         parts.append(
-            "DOCUMENTS DE RÉFÉRENCE DISPONIBLES\n\n"
-            "Ces documents constituent un support contextuel uniquement.\n"
-            "RÈGLE ABSOLUE : le transcript de la session est la source primaire du contenu des slides.\n"
-            "N'introduis aucune information non discutée en séance.\n\n"
-            "En revanche :\n"
-            "- Si un sujet du transcript résonne avec un document du corpus, tu peux enrichir\n"
-            "  le contenu de la slide avec des éléments précis de ce document.\n"
-            "- Si un document contient des éléments pertinents NON couverts dans le transcript,\n"
-            "  tu peux ajouter dans le champ \"notes\" de la slide :\n"
-            "  \"\\u2139\\ufe0f [Nom du document] contient des éléments complémentaires sur ce sujet.\"\n"
-            "- Cite toujours le document source entre crochets lorsque tu empruntes un élément.\n\n"
+            "REFERENCE DOCUMENTS AVAILABLE\n\n"
+            "These documents are supplementary context only.\n"
+            "ABSOLUTE RULE: the session transcript is the primary source for slide content.\n"
+            "Do not introduce any information not discussed during the session.\n\n"
+            "However:\n"
+            "- If a topic from the transcript resonates with a corpus document, you may enrich\n"
+            "  the slide content with specific elements from that document.\n"
+            "- If a document contains relevant elements NOT covered in the transcript,\n"
+            "  you may add to the slide's \"notes\" field:\n"
+            "  \"\\u2139\\ufe0f [Document name] contains additional elements on this topic.\"\n"
+            "- Always cite the source document in brackets when borrowing an element.\n\n"
             + corpus_block
         )
     if current_deck_spec:
         parts.append(
-            "DECK ACTUEL :\n"
+            "CURRENT DECK:\n"
             + json.dumps(current_deck_spec, ensure_ascii=False, indent=2)
         )
     if reminder:
         parts.append(reminder)
-    parts.append("Génère le deck_spec JSON complet.")
+    parts.append("Generate the complete deck_spec JSON.")
     return "\n\n".join(parts)
 
 
@@ -802,66 +802,66 @@ def _copy_slide_from_template(
 
 LAYOUT_CATALOG = {
     "cover": {
-        "description": "Slide de titre",
+        "description": "Title slide",
         "slots": "title (str), date (str), duration (str)",
         "layout_idx": 0,
     },
     "text-large": {
-        "description": "Titre + grand corps de texte",
+        "description": "Title + large body text",
         "slots": "title (str), body (str)",
         "layout_idx": 21,
     },
     "quote-large": {
-        "description": "Citation ou pitch mis en valeur",
+        "description": "Featured quote or pitch statement",
         "slots": "title (str), body (str)",
         "layout_idx": 21,
     },
     "bullets": {
-        "description": "Titre + liste à puces (max 6 items, max 15 mots chacun)",
+        "description": "Title + bullet list (max 6 items, max 15 words each)",
         "slots": "title (str), bullets (list[str])",
         "layout_idx": 21,
     },
     "three-columns": {
-        "description": "Trois colonnes égales",
+        "description": "Three equal columns",
         "slots": "title (str), col1 (str), col2 (str), col3 (str)",
         "layout_idx": 35,
     },
     "two-columns": {
-        "description": "Deux colonnes",
+        "description": "Two columns",
         "slots": "title (str), left (str), right (str)",
         "layout_idx": 35,
     },
     "concepts": {
-        "description": "Nuage de termes + relations",
+        "description": "Term cloud + relationships",
         "slots": "title (str), terms (list[str]), edges (list[str])",
         "layout_idx": 48,
     },
     "cards-3": {
-        "description": "3 cartes structurées côte à côte (heading + contenu)",
+        "description": "3 structured cards side by side (heading + content)",
         "slots": 'title (str), cards (list of {"heading": str, "content": str}, exactly 3 items)',
         "layout_idx": 35,
         "slide_copy_idx": 8,   # slide 9 du template, 0-indexé
     },
     "cards-4": {
-        "description": "4 cartes structurées (heading + contenu)",
+        "description": "4 structured cards (heading + content)",
         "slots": 'title (str), cards (list of {"heading": str, "content": str}, exactly 4 items)',
         "layout_idx": 35,
         "slide_copy_idx": 9,   # slide 10 du template
     },
     "cards-5": {
-        "description": "5 cartes structurées (heading + contenu)",
+        "description": "5 structured cards (heading + content)",
         "slots": 'title (str), cards (list of {"heading": str, "content": str}, exactly 5 items)',
         "layout_idx": 35,
         "slide_copy_idx": 10,  # slide 11 du template
     },
     "cards-4-rounded": {
-        "description": "4 cartes style arrondi (heading + contenu, variante visuelle)",
+        "description": "4 rounded-style cards (heading + content, visual variant of cards-4)",
         "slots": 'title (str), cards (list of {"heading": str, "content": str}, exactly 4 items)',
         "layout_idx": 35,
         "slide_copy_idx": 11,  # slide 12 du template
     },
     "divider": {
-        "description": "Séparateur de section (numéro + titre de section)",
+        "description": "Section separator (number + section title)",
         "slots": "title (str), number (str)",
         "layout_idx": 14,  # Divider 2 in template_cap_blank.pptx
     },
@@ -997,7 +997,7 @@ async def generate_deck_spec(
     for attempt in range(2):
         reminder = (
             "" if attempt == 0
-            else "RAPPEL : output JSON uniquement, aucun texte, aucune fence markdown."
+            else "REMINDER: output JSON only, no text, no markdown fences."
         )
         user_prompt = _build_user_prompt(
             recap=recap,

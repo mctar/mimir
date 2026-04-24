@@ -50,8 +50,8 @@ Headlines must be declarative assertions, not gerundive descriptions.
 Bullet content must name a decision, implication, risk, or recommended action.
 Bullets that merely describe a topic (without naming what changes or what is at stake) must be cut.
 
-OUTPUT LANGUAGE: Generate all slide text in the language of the provided recap.
-If the recap is in English, output English. If French, output French.
+OUTPUT LANGUAGE: Default to English.
+Only use another language if the session language field explicitly specifies it (e.g. "fr" → French).
 Layout catalog keys and JSON structure are always in English.
 
 RECOMMENDED STRUCTURE for a Positioning / Value Proposition recap:
