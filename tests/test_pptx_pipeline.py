@@ -146,7 +146,7 @@ def test_assemble_pptx_unknown_layout_fallback(tmp_path):
 
 
 def test_assemble_pptx_all_layouts(tmp_path):
-    """All 7 layouts render without exception."""
+    """text-large and two-columns layouts render without exception."""
     import export as exp
 
     deck_spec = {

@@ -885,7 +885,7 @@ def _assemble_pptx(deck_spec: dict, output: str) -> None:
         elif layout_name == "divider":
             slide.placeholders[0].text = slots.get("title", "")
             try:
-                slide.placeholders[23].text = slots.get("number", "")
+                slide.placeholders[23].text = slots.get("number", "")  # ph[23] = body text in Divider 2
             except (KeyError, IndexError):
                 logger.warning("_assemble_pptx: divider ph[23] not found")
 
