@@ -498,22 +498,26 @@ def _format_recap(recap: dict) -> str:
     positioning = recap.get("positioning")
     if positioning:
         lines.append("=== POSITIONING ===")
-        for key, label in _POSITIONING_LABELS.items():
+        for i, (key, label) in enumerate(_POSITIONING_LABELS.items(), 1):
             val = positioning.get(key)
             if val:
-                items_str = "; ".join(str(v) for v in val) if isinstance(val, list) else str(val)
-                lines.append(f"  {label:<38} → {items_str}")
-        lines.append("")
+                lines.append(f"  [{i}] {label.upper()}")
+                items = val if isinstance(val, list) else [val]
+                for item in items:
+                    lines.append(f"    • {item}")
+                lines.append("")
 
     value_prop = recap.get("value_proposition")
     if value_prop:
         lines.append("=== VALUE PROPOSITION ===")
-        for key, label in _VP_LABELS.items():
+        for i, (key, label) in enumerate(_VP_LABELS.items(), 1):
             val = value_prop.get(key)
             if val:
-                items_str = "; ".join(str(v) for v in val) if isinstance(val, list) else str(val)
-                lines.append(f"  {label:<38} → {items_str}")
-        lines.append("")
+                lines.append(f"  [{i}] {label.upper()}")
+                items = val if isinstance(val, list) else [val]
+                for item in items:
+                    lines.append(f"    • {item}")
+                lines.append("")
 
     pos_stmt = recap.get("positioning_statement")
     if pos_stmt:

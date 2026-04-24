@@ -544,18 +544,31 @@ def test_format_recap_v3():
         "scope_boundaries_non_goals": ["Not a functional pitch", "Not one-off"],
     }
     result = _format_recap(recap)
+    # Section headers
     assert "=== POSITIONING ===" in result
-    assert "What to sell?" in result
-    assert "End-to-end reinvention" in result
     assert "=== VALUE PROPOSITION ===" in result
-    assert "Design value engines" in result
     assert "=== POSITIONING STATEMENT ===" in result
-    assert "For Global 2000" in result
     assert "=== SCOPE / BOUNDARIES / NON-GOALS ===" in result
+    # Numbered sub-section headings (new format)
+    assert "[1] WHAT TO SELL?" in result
+    assert "[2] WHY NOW?" in result
+    assert "[3] WHY ARE WE WELL POSITIONED?" in result
+    assert "[4] TO WHOM?" in result
+    assert "[1] WHAT DO WE DO?" in result
+    assert "[2] HOW DO WE DO IT?" in result
+    assert "[3] HOW DO WE GET PAID?" in result
+    # Bullet items
+    assert "    • End-to-end reinvention" in result
+    assert "    • Agentic operations" in result
+    assert "    • Design value engines" in result
+    # Positioning statement and scope untouched
+    assert "For Global 2000" in result
     assert "Not a functional pitch" in result
-    # Internal metadata must NOT appear as content sections
+    # Internal metadata must NOT appear
     assert "Schema Version" not in result
     assert "Transcript Stats" not in result
+    # Old flat format must NOT appear
+    assert "What to sell?" not in result  # replaced by uppercase numbered heading
 
 
 def test_format_recap_unknown_keys():
