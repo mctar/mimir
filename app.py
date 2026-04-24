@@ -21,6 +21,7 @@ from reconciler import GraphReconciler
 import corpus as corpus_module
 from prompts.graph import mindmap_system, SMALL_MODEL_GRAPH_PREFIX
 from prompts.recap import BOARD_RECAP_SYSTEM, cross_session_system
+from prompts.slides import SLIDES_INJECT
 
 # ─── Load .env ───
 _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -2111,24 +2112,6 @@ def _publish_llm_state() -> None:
         metrics["cb_failures"] = total_failures
 
 
-# ─── Slide prompt injection ───────────────────────────────────────────────────
-_SLIDES_INJECT = """
-
-Additionally, return a "slide_updates" array in the same JSON object.
-For each slide whose topic is addressed in the CURRENT transcript excerpt, provide:
-  {"slide_id": "...", "bullets": ["...", "..."], "key_quote": "verbatim quote or null if none"}
-Slide IDs and their questions:
-  pos_what_sell="What we sell?", pos_why_now="Why now?",
-  pos_why_us="Why are we well positioned?", pos_to_whom="To Whom?",
-  pos_statement="Position statement (one sentence summary)",
-  val_what_do="What we do?", val_how="How we do it?",
-  val_paid="What do we get paid?", val_scope="Scope, boundaries & non-goals",
-  d2_targets="Targets and horizon", d2_priorities="Priorities and orchestration"
-Only include slides with NEW relevant content from the current segment.
-Max 5 bullets per slide. Each bullet ≤ 15 words.
-If no slide is addressed in this segment, return "slide_updates": [].
-"""
-
 
 async def _proxy_claude(websocket: WebSocket, req: dict):
     """Proxy an LLM request server-side, walking the fallback chain."""
@@ -2140,7 +2123,7 @@ async def _proxy_claude(websocket: WebSocket, req: dict):
     try:
         body = dict(req.get("body", {}))
         # Inject slide extraction into every graph analysis call
-        body["system"] = body.get("system", "") + _SLIDES_INJECT
+        body["system"] = body.get("system", "") + SLIDES_INJECT
         status_code, data, provider, model = await call_llm_chain(body)
         dt = time.time() - t0
 
