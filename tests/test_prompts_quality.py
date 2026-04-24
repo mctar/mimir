@@ -29,3 +29,19 @@ def test_recap_has_self_review_step():
 def test_recap_empty_list_rule():
     """Empty list preference must be stated explicitly."""
     assert "empty list is preferable" in BOARD_RECAP_SYSTEM.lower()
+
+
+# ── cross_session_system ──────────────────────────────────────────────────────
+
+def test_cross_session_insight_quality_rule():
+    """Insights must name a consequence or decision implication, not just observe a connection."""
+    prompt = cross_session_system("English", "en")
+    assert "consequence" in prompt.lower() or "decision implication" in prompt.lower()
+    assert "not merely observe" in prompt or "merely observe" in prompt
+
+
+def test_cross_session_empty_array_preference():
+    """Empty array preference must be explicitly stated for insights and tensions."""
+    prompt = cross_session_system("English", "en")
+    assert "empty" in prompt.lower()
+    assert "omit" in prompt.lower() or "prefer" in prompt.lower()
