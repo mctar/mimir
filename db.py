@@ -1,12 +1,12 @@
 """
-SQLite persistence for Live Mind Map sessions.
+SQLite persistence for Livescribe sessions.
 Uses aiosqlite for async access with WAL mode for concurrent reads.
 """
 
 import json, time
 import aiosqlite
 
-DB_PATH = "livemind.db"
+DB_PATH = "livescribe.db"
 _db: aiosqlite.Connection | None = None
 
 

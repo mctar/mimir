@@ -1,8 +1,8 @@
-# Live Mind Map
+# Livescribe
 
 ## What is it?
 
-Live Mind Map turns a conversation into a visual map of ideas — in real time.
+Livescribe turns a conversation into a visual map of ideas — in real time.
 
 As people talk in a meeting, workshop, or lecture, the system listens, transcribes what's being said, and uses AI to identify the key concepts and how they connect. These appear as an animated, interactive map on screen: glowing nodes for ideas, lines for relationships, colours for categories.
 

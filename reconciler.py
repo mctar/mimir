@@ -1,5 +1,5 @@
 """
-Deterministic graph reconciler for Live Mind Map.
+Deterministic graph reconciler for Livescribe.
 Manages node lifecycle (active/parked/archived/hidden), scoring,
 decay, budget enforcement, and user actions.
 """

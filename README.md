@@ -1,4 +1,4 @@
-# Live Mind Map
+# Livescribe
 
 Real-time conversation visualization. Microphone audio is transcribed locally on-device, then AI extracts concepts and relationships into an animated, interactive mind map — all as people speak.
 
@@ -21,8 +21,8 @@ Concepts that stop being discussed fade out. Important ideas stick around. The m
 
 ```bash
 # Clone
-git clone https://github.com/mctar/livemind.git
-cd livemind
+git clone https://github.com/mctar/livescribe.git
+cd livescribe
 
 # Setup
 python3 -m venv .venv
@@ -79,9 +79,9 @@ No frameworks, no Docker, no build step. Vanilla HTML/CSS/JS frontend served by 
 
 ## Session management
 
-Sessions store everything: transcripts, graph snapshots, user actions. Use **New Session** to archive the current session and start fresh. All past session data remains in `livemind.db`.
+Sessions store everything: transcripts, graph snapshots, user actions. Use **New Session** to archive the current session and start fresh. All past session data remains in `livescribe.db`.
 
-To wipe all history: delete `livemind.db` and restart.
+To wipe all history: delete `livescribe.db` and restart.
 
 ## Configuration
 

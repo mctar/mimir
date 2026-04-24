@@ -4,9 +4,9 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## What This Is
 
-Mímir: a real-time conversation visualization system that captures live speech, transcribes it, and builds an animated knowledge graph of concepts and relationships as people talk. Named after the Norse keeper of the well of wisdom.
+Livescribe: a real-time conversation visualization system that captures live speech, transcribes it, and builds an animated knowledge graph of concepts and relationships as people talk.
 
-Formerly "LiveMind". Now runs sovereign on a DGX Spark (hugin.local) with all inference local. No external API calls required for core operation (cloud LLMs available as fallback).
+Runs sovereign on a DGX Spark (hugin.local) with all inference local. No external API calls required for core operation (cloud LLMs available as fallback).
 
 ## Architecture Overview
 
@@ -25,7 +25,7 @@ getUserMedia → Web Audio API
                                     → SQLite persistence
 ```
 
-Audio capture happens in the browser (monitor view), NOT on the server. The server never touches a microphone. This is the key architectural difference from the original LiveMind.
+Audio capture happens in the browser (monitor view), NOT on the server. The server never touches a microphone.
 
 ## Three Views
 
@@ -48,7 +48,7 @@ python app.py --host 0.0.0.0 --port 8765
 python app.py --host 0.0.0.0 --port 8080
 ```
 
-Server starts and is accessible via Cloudflare tunnel at `mimir.btrbot.com`.
+Server starts and is accessible via Cloudflare tunnel at `livescribe.btrbot.com`.
 Open `/monitor` on the technician's device, `/` on the audience-facing screen.
 
 ## File Structure
@@ -76,7 +76,7 @@ sessions.html       — Session browser: list, detail, recap generation, export
 - **Claude** via API: claude-sonnet-4 (recap generation, fallback)
 
 ### Networking
-- Cloudflare Tunnel: `mimir.btrbot.com` → localhost:8765
+- Cloudflare Tunnel: `livescribe.btrbot.com` → localhost:8765
 - Cloudflare Access: service token auth (same credentials as munin/stt)
 - Related services: `munin.btrbot.com` (Ollama API), `stt.btrbot.com` (faster-whisper)
 

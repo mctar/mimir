@@ -1,18 +1,18 @@
-# Mímir — Quick Start for Tomorrow
+# Livescribe — Quick Start for Tomorrow
 
-Mímir builds a live knowledge graph from your conversations. It transcribes speech in real time, identifies key concepts and relationships, and displays an animated map that evolves as the discussion progresses. After the session, it generates AI-powered recaps that surface non-obvious connections and key takeaways.
+Livescribe builds a live knowledge graph from your conversations. It transcribes speech in real time, identifies key concepts and relationships, and displays an animated map that evolves as the discussion progresses. After the session, it generates AI-powered recaps that surface non-obvious connections and key takeaways.
 
 ---
 
 ## Access
 
-All views are at **mimir.btrbot.com**. You'll be prompted to authenticate via Cloudflare Access on first visit.
+All views are at **livescribe.btrbot.com**. You'll be prompted to authenticate via Cloudflare Access on first visit.
 
 | View | URL | Who |
 |------|-----|-----|
-| **Display** | [mimir.btrbot.com](https://mimir.btrbot.com) | Projected for the audience — the live knowledge graph |
-| **Monitor** | [mimir.btrbot.com/monitor](https://mimir.btrbot.com/monitor) | The operator running the session — audio, controls, metrics |
-| **Sessions** | [mimir.btrbot.com/sessions](https://mimir.btrbot.com/sessions) | Post-session — recaps, transcripts, exports |
+| **Display** | [livescribe.btrbot.com](https://livescribe.btrbot.com) | Projected for the audience — the live knowledge graph |
+| **Monitor** | [livescribe.btrbot.com/monitor](https://livescribe.btrbot.com/monitor) | The operator running the session — audio, controls, metrics |
+| **Sessions** | [livescribe.btrbot.com/sessions](https://livescribe.btrbot.com/sessions) | Post-session — recaps, transcripts, exports |
 
 ---
 
@@ -46,7 +46,7 @@ All views are at **mimir.btrbot.com**. You'll be prompted to authenticate via Cl
 
 ## Operator Documentation
 
-Full guide at **[mimir.btrbot.com/doc](https://mimir.btrbot.com/doc)** — covers setup, monitoring, post-session workflow, and troubleshooting.
+Full guide at **[livescribe.btrbot.com/doc](https://livescribe.btrbot.com/doc)** — covers setup, monitoring, post-session workflow, and troubleshooting.
 
 ---
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Mímir — File Replay Module
+Livescribe — File Replay Module
 Feed a pre-recorded audio file through the STT → LLM → reconciler pipeline.
 Produces a session in the DB identical to a live recording.
 
@@ -172,7 +172,7 @@ async def replay_file(
     llm_model: str | None = None,
     stt_backend: str | None = None,
     stt_language: str | None = None,
-    db_path: str = "livemind.db",
+    db_path: str = "livescribe.db",
 ) -> dict:
     """Replay an audio file through the full STT→LLM→reconciler pipeline.
     Returns {"session_id", "segments", "snapshots", "duration_s"}."""
@@ -343,7 +343,7 @@ async def replay_file(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Replay an audio file through Mímir's STT→LLM→graph pipeline"
+        description="Replay an audio file through Livescribe's STT→LLM→graph pipeline"
     )
     parser.add_argument("file", help="Path to audio file (wav, mp3, ogg, flac, m4a, ...)")
     parser.add_argument("--topic", default="", help="Session topic (default: filename)")
@@ -353,7 +353,7 @@ def main():
     parser.add_argument("--llm-model", help="LLM model name (default: server config)")
     parser.add_argument("--stt-backend", choices=["remote", "parakeet", "canary"], help="STT backend (default: server config)")
     parser.add_argument("--stt-language", default=None, help="STT language code, e.g. 'no' for Norwegian (default: auto-detect)")
-    parser.add_argument("--db", default="livemind.db", help="Database path (default: livemind.db)")
+    parser.add_argument("--db", default="livescribe.db", help="Database path (default: livescribe.db)")
     args = parser.parse_args()
 
     asyncio.run(replay_file(

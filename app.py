@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Mímir — FastAPI Server
+Livescribe — FastAPI Server
 Real-time conversation visualization. Receives audio from browser,
 dispatches to STT, proxies LLM calls, manages graph reconciliation.
 """
@@ -298,13 +298,13 @@ WS_PORT = 8765
 
 
 # ─── Static serving ───
-@app.get("/mimir-favicon.svg")
+@app.get("/livescribe-favicon.svg")
 async def serve_favicon():
-    return FileResponse(os.path.join(os.path.dirname(__file__), "mimir-favicon.svg"), media_type="image/svg+xml")
+    return FileResponse(os.path.join(os.path.dirname(__file__), "livescribe-favicon.svg"), media_type="image/svg+xml")
 
-@app.get("/mimir-logo-clean.svg")
+@app.get("/livescribe-logo-clean.svg")
 async def serve_logo():
-    return FileResponse(os.path.join(os.path.dirname(__file__), "mimir-logo-clean.svg"), media_type="image/svg+xml")
+    return FileResponse(os.path.join(os.path.dirname(__file__), "livescribe-logo-clean.svg"), media_type="image/svg+xml")
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_main():
@@ -573,7 +573,7 @@ async def start_export(session_id: str, fmt: str, request: Request):
 
     import tempfile
     ext = "pdf" if fmt == "pdf" else "mp4"
-    outfile = os.path.join(tempfile.gettempdir(), f"mimir-{session_id}.{ext}")
+    outfile = os.path.join(tempfile.gettempdir(), f"livescribe-{session_id}.{ext}")
 
     _export_tasks[task_key] = {"status": "running", "path": outfile, "error": None}
 
@@ -621,7 +621,7 @@ async def download_export(session_id: str, fmt: str):
     return FileResponse(
         info["path"],
         media_type=media,
-        filename=f"mimir-{session_id}.{ext}",
+        filename=f"livescribe-{session_id}.{ext}",
     )
 
 
@@ -2145,13 +2145,13 @@ async def snapshot_loop():
 if __name__ == "__main__":
     import uvicorn
 
-    p = argparse.ArgumentParser(description="Mímir Server")
+    p = argparse.ArgumentParser(description="Livescribe Server")
     p.add_argument("--host", default="0.0.0.0", help="Bind host")
     p.add_argument("--port", type=int, default=8765, help="Bind port")
     args = p.parse_args()
 
     print("=" * 50)
-    print("  Mímir : Server")
+    print("  Livescribe : Server")
     print("=" * 50 + "\n")
 
     WS_PORT = args.port

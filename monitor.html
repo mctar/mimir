@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mímir Monitor</title>
-<link rel="icon" type="image/svg+xml" href="/mimir-favicon.svg">
+<title>Livescribe Monitor</title>
+<link rel="icon" type="image/svg+xml" href="/livescribe-favicon.svg">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=IBM+Plex+Mono:wght@300;400;500&display=swap');
@@ -707,7 +707,7 @@ select option {
 
 <!-- ===== HEADER ===== -->
 <div id="header">
-  <span class="brand">Mímir Monitor</span>
+  <span class="brand">Livescribe Monitor</span>
   <div class="session-info">
     <span>Session:</span>
     <span class="session-id" id="hdr-session">---</span>
@@ -723,7 +723,7 @@ select option {
 <!-- ===== PHASE 1: SESSION SETUP ===== -->
 <div id="phase-setup">
   <div class="setup-card">
-    <img src="/mimir-logo-clean.svg" alt="Mímir" style="width:220px;margin-bottom:24px;opacity:0.85;">
+    <img src="/livescribe-logo-clean.svg" alt="Livescribe" style="width:220px;margin-bottom:24px;opacity:0.85;">
     <h2>Session Setup</h2>
 
     <div class="setup-field">
@@ -1217,7 +1217,7 @@ async function initAudioDevices() {
     });
 
     // Restore last selected device
-    const saved = localStorage.getItem('mimir_audio_device');
+    const saved = localStorage.getItem('livescribe_audio_device');
     if (saved && audioInputs.some(d => d.deviceId === saved)) {
       picker.value = saved;
     }
@@ -1232,7 +1232,7 @@ async function startCapture() {
   const deviceId = el('device-picker').value;
   if (!deviceId) return;
 
-  localStorage.setItem('mimir_audio_device', deviceId);
+  localStorage.setItem('livescribe_audio_device', deviceId);
 
   // Stop existing
   stopCapture();

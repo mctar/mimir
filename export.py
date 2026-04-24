@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Mimir — Session Graph Export
+Livescribe — Session Graph Export
 Generate PDF snapshots and video replays of session knowledge graphs.
 Uses Playwright to render the D3 visualization headlessly.
 
@@ -47,7 +47,7 @@ def format_duration(seconds: float) -> str:
 
 # ─── PDF Export ───
 
-async def export_pdf(session_id: str, output: str, db_path: str = "livemind.db"):
+async def export_pdf(session_id: str, output: str, db_path: str = "livescribe.db"):
     """Export the peak graph snapshot as a two-page PDF."""
     from playwright.async_api import async_playwright
 
@@ -134,7 +134,7 @@ async def export_pdf(session_id: str, output: str, db_path: str = "livemind.db")
 async def export_video(
     session_id: str,
     output: str,
-    db_path: str = "livemind.db",
+    db_path: str = "livescribe.db",
     speed: float = 1.0,
     max_hold: float = 3.0,
     settle_time: float = 2.5,
@@ -157,7 +157,7 @@ async def export_video(
     print(f"Recording {len(snapshots)} snapshots → {output}")
     print(f"  Speed: {speed}x, max hold: {max_hold}s, settle: {settle_time}s")
 
-    tmpdir = tempfile.mkdtemp(prefix="mimir-export-")
+    tmpdir = tempfile.mkdtemp(prefix="livescribe-export-")
 
     try:
         async with async_playwright() as p:
@@ -237,14 +237,14 @@ async def export_video(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Export Mimir session graphs as PDF or video"
+        description="Export Livescribe session graphs as PDF or video"
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
     pdf_parser = sub.add_parser("pdf", help="Export peak graph snapshot as PDF")
     pdf_parser.add_argument("session_id", help="Session ID to export")
     pdf_parser.add_argument("-o", "--output", help="Output file path (default: <session_id>.pdf)")
-    pdf_parser.add_argument("--db", default="livemind.db", help="Database path")
+    pdf_parser.add_argument("--db", default="livescribe.db", help="Database path")
 
     vid_parser = sub.add_parser("video", help="Export graph evolution as mp4 video")
     vid_parser.add_argument("session_id", help="Session ID to export")
@@ -252,7 +252,7 @@ def main():
     vid_parser.add_argument("--speed", type=float, default=2.0, help="Playback speed multiplier (default: 2.0)")
     vid_parser.add_argument("--max-hold", type=float, default=3.0, help="Max seconds per snapshot (default: 3.0)")
     vid_parser.add_argument("--settle", type=float, default=2.5, help="Seconds for D3 animation to settle per snapshot (default: 2.5)")
-    vid_parser.add_argument("--db", default="livemind.db", help="Database path")
+    vid_parser.add_argument("--db", default="livescribe.db", help="Database path")
 
     args = parser.parse_args()
 

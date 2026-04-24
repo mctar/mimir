@@ -1,4 +1,4 @@
-# Mímir — System Overview
+# Livescribe — System Overview
 
 *Real-time conversation visualization: live speech → transcription → AI analysis → animated knowledge graph*
 
@@ -195,7 +195,7 @@ pin_bonus  = 0.15 if pinned, else 0.0
 
 ### Database — `db.py`
 
-SQLite with WAL mode via aiosqlite. Single file: `livemind.db`.
+SQLite with WAL mode via aiosqlite. Single file: `livescribe.db`.
 
 **Tables:**
 
@@ -332,7 +332,7 @@ Recap generation uses `gemma4:31b` (quality model) with up to 4096 output tokens
 
 | Service | Port | Type | GPU Memory |
 |---------|------|------|------------|
-| Mímir server (app.py) | 8765 | Python process | — |
+| Livescribe server (app.py) | 8765 | Python process | — |
 | faster-whisper STT | 8766 | Python process | ~2.2 GB |
 | Parakeet TDT | 8010 | Docker container | ~2.9 GB |
 | Canary 1b v2 | 8011 | Docker container | ~10 GB |
@@ -341,7 +341,7 @@ Recap generation uses `gemma4:31b` (quality model) with up to 4096 output tokens
 Total GPU memory when all services loaded: ~51 GB. On unified memory architecture, all compete for bandwidth. Unloading unused STT backends (`docker stop canary-asr`) frees memory and can improve LLM inference speed.
 
 ### Networking
-- **Cloudflare Tunnel:** `mimir.btrbot.com` → localhost:8765
+- **Cloudflare Tunnel:** `livescribe.btrbot.com` → localhost:8765
 - **Cloudflare Access:** service token auth
 - **Related services:** `munin.btrbot.com` (Ollama API), `stt.btrbot.com` (faster-whisper)
 
