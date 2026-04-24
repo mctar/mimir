@@ -5,7 +5,7 @@ Real-time conversation visualization. Receives audio from browser,
 dispatches to STT, proxies LLM calls, manages graph reconciliation.
 """
 
-import asyncio, json, time, threading, queue, argparse, os, uuid, base64
+import asyncio, json, time, threading, queue, argparse, os, uuid, base64, re
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
@@ -496,6 +496,42 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 WS_PORT = 8765
+
+
+# ─── Transcript import helpers ──────────────────────────────────────────────
+
+def _parse_transcript(raw: str) -> str:
+    """Return clean text from a plain-text or WebVTT transcript string."""
+    stripped = raw.strip()
+    is_vtt = stripped.startswith("WEBVTT") or bool(
+        re.search(r"\d{2}:\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}:\d{2}\.\d{3}", stripped)
+    )
+    if not is_vtt:
+        return stripped
+    lines = []
+    for line in stripped.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith(("WEBVTT", "NOTE", "STYLE")):
+            continue
+        if re.match(r"\d{2}:\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}:\d{2}\.\d{3}", line):
+            continue
+        if re.match(r"^\d+$", line):
+            continue
+        line = re.sub(r"<v[^>]+>", "", line).strip()
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+def _split_segments(text: str) -> list[str]:
+    """Split transcript text into segments, preferring paragraph breaks."""
+    parts = [p.strip() for p in re.split(r"\n{2,}", text)]
+    parts = [p for p in parts if p]
+    if len(parts) <= 1:
+        parts = [line.strip() for line in text.splitlines() if line.strip()]
+    return parts
 
 
 # ─── Static serving ───
