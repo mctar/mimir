@@ -71,3 +71,74 @@ def test_split_segments_ignores_blank_parts():
     text = "First.\n\n\n\nSecond."
     parts = _split_segments(text)
     assert parts == ["First.", "Second."]
+
+
+import db as db_module
+
+
+@pytest.fixture
+def tmp_db(tmp_path):
+    path = str(tmp_path / "test.db")
+    asyncio.run(db_module.init_db(path))
+    yield path
+    asyncio.run(db_module.close_db())
+
+
+def test_import_creates_session_with_external_source(tmp_db):
+    """Simulates the import endpoint: session gets source='external' and segments are inserted."""
+    import time as time_mod
+
+    raw = "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
+    cleaned = _parse_transcript(raw)
+    parts = _split_segments(cleaned)
+    sid = "imp-test1"
+
+    async def run():
+        await db_module.create_session(sid, "Test Import", source="external")
+        await db_module.end_session(sid)
+        base = time_mod.time()
+        for seq, text in enumerate(parts, start=1):
+            await db_module.store_segment(
+                sid, seq, text, False, base + seq - 1,
+                stt_backend="external", stt_language="",
+            )
+        segments = await db_module.get_session_transcript(sid)
+        return segments
+
+    segments = asyncio.run(run())
+    assert len(segments) == 3
+    assert segments[0]["text"] == "First paragraph."
+    assert segments[2]["text"] == "Third paragraph."
+    assert segments[0]["stt_backend"] == "external"
+
+
+def test_import_vtt_end_to_end(tmp_db):
+    """VTT content flows correctly through parse → split → store."""
+    import time as time_mod
+
+    vtt = """WEBVTT
+
+00:00:01.000 --> 00:00:03.000
+<v Alice>We need to prioritize the roadmap.
+
+00:00:04.000 --> 00:00:06.000
+<v Bob>Agreed, let's focus on Q3 deliverables."""
+    cleaned = _parse_transcript(vtt)
+    parts = _split_segments(cleaned)
+    sid = "imp-test2"
+
+    async def run():
+        await db_module.create_session(sid, "VTT Test", source="external")
+        await db_module.end_session(sid)
+        base = time_mod.time()
+        for seq, text in enumerate(parts, start=1):
+            await db_module.store_segment(
+                sid, seq, text, False, base + seq - 1,
+                stt_backend="external", stt_language="",
+            )
+        return await db_module.get_session_transcript(sid)
+
+    segments = asyncio.run(run())
+    assert len(segments) == 2
+    assert "roadmap" in segments[0]["text"]
+    assert "Q3" in segments[1]["text"]

@@ -627,6 +627,53 @@ async def unarchive_sessions(request: Request):
     return JSONResponse({"ok": True, "unarchived": len(session_ids)})
 
 
+@app.post("/v1/sessions/import")
+async def import_transcript(request: Request):
+    """Create a new session from an externally-provided transcript (plain text or VTT)."""
+    body = await request.json()
+    topic = (body.get("topic") or "").strip()
+    date_str = (body.get("date") or "").strip()
+    raw = (body.get("transcript") or "").strip()
+
+    if not topic:
+        return JSONResponse({"error": "topic is required"}, status_code=400)
+    if not raw:
+        return JSONResponse({"error": "transcript is required"}, status_code=400)
+
+    cleaned = _parse_transcript(raw)
+    if not cleaned:
+        return JSONResponse({"error": "Transcript is empty after parsing"}, status_code=400)
+
+    base_ts = time.time()
+    if date_str:
+        try:
+            from datetime import datetime as _dt
+            base_ts = _dt.fromisoformat(date_str).timestamp()
+        except ValueError:
+            pass
+
+    parts = _split_segments(cleaned)
+    session_id = str(uuid.uuid4())[:8]
+    await db.create_session(session_id, topic, source="external")
+    await db.end_session(session_id)
+
+    for seq, text in enumerate(parts, start=1):
+        await db.store_segment(
+            session_id=session_id,
+            seq=seq,
+            text=text,
+            is_partial=False,
+            timestamp=base_ts + seq - 1,
+            stt_backend="external",
+            stt_language="",
+        )
+
+    logger.info(
+        f"import_transcript: session={session_id} topic={topic!r} segments={len(parts)}"
+    )
+    return JSONResponse({"session_id": session_id, "segments": len(parts)})
+
+
 @app.post("/v1/sessions")
 async def create_session(request: Request):
     body = await request.json()
