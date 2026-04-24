@@ -11,7 +11,7 @@ Fallback: configure_stt_fallback(url) sets a secondary URL. After 3 consecutive
 failures on the primary, the worker switches to the fallback automatically.
 """
 
-import time, threading, os
+import re, time, threading, os
 import numpy as np
 from log import logger
 from prompts.utils import VOCABULARY_HINTS
@@ -51,6 +51,9 @@ _WHISPER_HALLUCINATIONS = {
     "subs by www.teletext.ch",
 }
 
+# Catches single-character repetition hallucinations: "_____", "──────", etc.
+_CHAR_REPEAT_RE = re.compile(r'(.)\1{14,}')
+
 # Previous result for deduplication
 _prev_result = {"text": "", "time": 0.0}
 
@@ -64,6 +67,11 @@ def _clean_whisper_output(text: str) -> str:
     # Exact match against known hallucinations
     if stripped.lower().rstrip(".!,") in _WHISPER_HALLUCINATIONS or stripped.lower() in _WHISPER_HALLUCINATIONS:
         logger.debug(f"[Filter] hallucination dropped: '{stripped}'")
+        return ""
+
+    # Single-character repetition hallucinations (e.g. "___________", ". . . . . . . . .")
+    if _CHAR_REPEAT_RE.search(stripped.replace(' ', '')):
+        logger.debug(f"[Filter] char-repetition hallucination dropped: '{stripped[:80]}'")
         return ""
 
     # Repetition detection — if the same short phrase repeats 3+ times, it's looping
@@ -235,7 +243,7 @@ def transcribe_audio_chunk(
 
     # Skip if too quiet
     rms = float(np.sqrt(np.mean(audio_16k ** 2)))
-    if rms < 0.005:
+    if rms < 0.012:
         with metrics_lock:
             metrics["chunks_skipped_silent"] = metrics.get("chunks_skipped_silent", 0) + 1
         return None
