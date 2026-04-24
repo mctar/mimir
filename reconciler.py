@@ -104,7 +104,8 @@ class GraphReconciler:
         self.edges = [
             {"source": e["source"], "target": e["target"], "label": e.get("label", "")}
             for e in proposed_edges
-            if e["source"] in active_ids and e["target"] in active_ids
+            if "source" in e and "target" in e
+            and e["source"] in active_ids and e["target"] in active_ids
         ]
 
         # 5. Compute edge counts

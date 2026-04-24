@@ -1027,32 +1027,6 @@ async def generate_recap(session_id: str):
             lang_counts[lang] = lang_counts.get(lang, 0) + 1
     session_lang = max(lang_counts, key=lang_counts.get) if lang_counts else "en"
 
-    # Get final snapshot — full graph with nodes and edges
-    snapshot = await db.get_latest_snapshot(session_id)
-    graph_context = ""
-    if snapshot and snapshot.get("graph"):
-        graph = snapshot["graph"]
-        nodes = graph.get("nodes", {})
-        edges = graph.get("edges", [])
-        # Build structured graph description
-        active_nodes = {nid: n for nid, n in nodes.items() if n.get("state") == "active"}
-        if active_nodes:
-            node_lines = [f"  - {n.get('label', nid)} (category: {n.get('group', 'unknown')})" for nid, n in active_nodes.items()]
-            # Map node IDs to labels for edge descriptions
-            id_to_label = {nid: n.get("label", nid) for nid, n in nodes.items()}
-            edge_lines = []
-            for e in edges:
-                src = e.get("source", "")
-                tgt = e.get("target", "")
-                lbl = e.get("label", "relates to")
-                src_label = id_to_label.get(src, src)
-                tgt_label = id_to_label.get(tgt, tgt)
-                if src in active_nodes or tgt in active_nodes:
-                    edge_lines.append(f"  - {src_label} --[{lbl}]--> {tgt_label}")
-            graph_context = "\n\nFINAL KNOWLEDGE GRAPH:\nNodes:\n" + "\n".join(node_lines)
-            if edge_lines:
-                graph_context += "\n\nEdges (relationships):\n" + "\n".join(edge_lines)
-
     # Compute stats
     duration_minutes = 0.0
     if len(segments) >= 2:
@@ -1069,39 +1043,90 @@ async def generate_recap(session_id: str):
     if len(full_text) > max_chars:
         transcript_for_recap += f"\n\n[Transcript truncated at {max_chars} chars out of {len(full_text)}]"
 
-    lang_name = {"en": "English", "no": "Norwegian", "sv": "Swedish", "da": "Danish",
-                 "de": "German", "fr": "French"}.get(session_lang, "English")
+    system_prompt = """SYSTEM PROMPT – BOARD-LEVEL RECAP FOR SLIDE GENERATION
 
-    system_prompt = f"""You generate structured session recap documents that surface insight, not meeting minutes.
-You have access to both the full transcript AND the final knowledge graph (nodes and their relationships).
+You are acting as a senior strategy analyst supporting Capgemini Invent executive leadership.
+
+You analyze the transcript of a Capgemini Invent Board-level working session on "Intelligent Operations" and extract clear, structured, and decision-grade insights suitable for automatic slide generation.
+
+Your output must reflect a CXO-level mindset:
+- Sharp, concise, and assertive language
+- Fact-based, no fluff, no generic consulting phrasing
+- Explicit focus on value, positioning, differentiation, and monetization
+- Written natively in English, with precise and unambiguous wording
+
+ANALYTICAL FRAMEWORK – DAY 1 KEY DISCUSSION POINTS
+
+1. POSITIONING
+For each sub-question, extract only what is explicitly supported by the transcript.
+
+What do we sell?
+Hints: Transform and/or Run | Value game step-up | Asset / IP-led services | Front / Core / Back
+
+Why now?
+Hints: Market inflection point | Transformation renewal | IOPs market momentum | Agentic operations becoming reality
+
+Why are we well positioned?
+Hints: Tri-pod (Transformation × Industry × Technology) | Orchestrator & neutral partner role | Credibility and proof points
+
+To whom do we sell?
+Hints: CXO-level play | Customer tiers | Client archetypes vs. real buying behavior
+
+2. VALUE PROPOSITION
+
+What do we do?
+Hints: Value engine | End-to-end operational reinvention | Shift from static to dynamic services
+
+How do we do it?
+Hints: Evolution vs. disruption | Deal anatomy | Aggregation of capabilities
+
+How do we get paid?
+Hints: Value / risk / cash equation | Shared accountability models
+
+EXTRACTION & SYNTHESIS RULES (STRICT)
+- For each sub-question, identify transcript elements that directly address the associated hints
+- Synthesize into concise executive bullets
+- Maximum 1–2 sentences per bullet
+- Each bullet must express a single, clear idea
+- If a hint is not discussed, do not mention it
+- If relevant content does not map cleanly to a hint but clearly answers the sub-question, include it
+- If a full sub-question is not addressed at all, return an empty list
+- Do not invent, infer, extrapolate, or speculate beyond what is explicitly stated in the transcript
+
+ADDITIONAL REQUIRED OUTPUTS
+In addition to the structured analysis, generate:
+
+1. POSITIONING STATEMENT
+- One single, sharp sentence
+- Synthesizing the four Positioning sub-questions
+- Suitable to be used as a slide headline
+
+2. SCOPE / BOUNDARIES / NON-GOALS
+- Explicit list derived from the Value Proposition section
+- Clarifies what Intelligent Operations is not, will not cover, or is deliberately out of scope
+- Written in an executive, unambiguous tone
+
+✅ The final output must be directly consumable by a slide-generation engine
+✅ Priority: clarity, sharpness, and executive relevance over verbosity
 
 Return ONLY valid JSON with this exact structure:
-{{
-  "elevator_pitch": "2-3 sentences a participant could say out loud after the session about what it means. First person plural is fine. Written in {lang_name}.",
-  "non_obvious_connections": [
-    {{"topics": ["Topic A", "Topic B"], "insight": "What the link reveals that wasn't stated explicitly."}}
-  ],
-  "retain": ["First thing worth remembering a week from now.", "Second.", "Third."],
-  "contradictions": ["Where the discussion diverged from stated positions or earlier claims."],
-  "summary": "One paragraph reference summary.",
-  "decisions": ["Decisions made, if any."],
-  "open_threads": ["Unresolved tensions or threads worth following up."]
-}}
+{
+  "positioning": {
+    "what_to_sell": [],
+    "why_now": [],
+    "why_well_positioned": [],
+    "to_whom": []
+  },
+  "value_proposition": {
+    "what_we_do": [],
+    "how_we_do_it": [],
+    "how_we_get_paid": []
+  },
+  "positioning_statement": "",
+  "scope_boundaries_non_goals": []
+}"""
 
-LANGUAGE: Write ALL fields in {lang_name}. Every field — elevator_pitch, retain, non_obvious_connections insights, contradictions, summary, decisions, open_threads — must be written in {lang_name}. Do NOT switch to English for any field.
-
-Rules:
-- elevator_pitch: Write in {lang_name}, in the voice of a participant (first person). 2-3 sentences someone could actually say out loud.
-- non_obvious_connections: 0 to 3 items ONLY. Draw on the knowledge graph edges to find links participants likely didn't notice in the room. Return an EMPTY ARRAY rather than fabricate connections. One real connection beats three plausible ones. Write the insight in {lang_name}.
-- retain: EXACTLY 3 items in {lang_name}. The three ideas that should survive the week. Forces you to prioritize.
-- contradictions: Often empty — that's fine. Only include when there's genuine divergence between what was said vs. stated positions, slides, or earlier claims. Return an EMPTY ARRAY if none. Write in {lang_name}.
-- summary: One concise paragraph in {lang_name}. This is reference material, not the headline.
-- decisions: Empty array if none. Name the people involved where possible. Write in {lang_name}.
-- open_threads: Unresolved tensions or questions worth following up. Empty array if none. Write in {lang_name}.
-- Prefer empty arrays over speculation. Never invent or pad.
-- Use specific names, not "the user" or "the participant"."""
-
-    user_prompt = f"SESSION TRANSCRIPT:\n\n{transcript_for_recap}{graph_context}\n\nGenerate the recap."
+    user_prompt = f"SESSION TRANSCRIPT:\n\n{transcript_for_recap}\n\nGenerate the structured DAY 1 recap."
 
     # Walk the LLM chain (hugin → gemini → anthropic) with JSON-parse retry
     max_attempts = 2
@@ -1123,7 +1148,7 @@ Rules:
                 cleaned = cleaned[:-3]
             recap = json.loads(cleaned.strip())
             recap["language"] = session_lang
-            recap["schema_version"] = 2
+            recap["schema_version"] = 3
             recap["transcript_stats"] = stats
             served_model = _llm_chain[0]["model"] if _llm_chain else "unknown"
             await db.store_recap(session_id, recap, served_model)
@@ -1135,7 +1160,7 @@ Rules:
             if attempt < max_attempts - 1:
                 continue
             error_recap = {
-                "schema_version": 2,
+                "schema_version": 3,
                 "language": session_lang,
                 "error": f"Failed to parse LLM response after {max_attempts} attempts: {e}",
                 "raw_response": raw_text[:2000],
@@ -1158,7 +1183,7 @@ async def update_recap(session_id: str, request: Request):
     recap = body.get("recap")
     if not isinstance(recap, dict):
         return JSONResponse({"error": "recap must be an object"}, status_code=400)
-    recap["schema_version"] = recap.get("schema_version", 2)
+    recap["schema_version"] = recap.get("schema_version", 3)
     await db.store_recap(session_id, recap, model="manual")
     return JSONResponse({"recap": recap, "model": "manual", "created_at": time.time()})
 
@@ -2028,31 +2053,25 @@ def _extract_graph_json(raw_text: str) -> dict:
     import re
     cleaned = raw_text.replace("```json", "").replace("```", "")
 
-    # Strategy 1: find {"nodes" and parse from there (handles thinking preamble)
-    for pattern in [r'\{\s*"nodes"\s*:', r"\{\s*'nodes'\s*:"]:
-        match = re.search(pattern, cleaned)
-        if match:
-            start = match.start()
-            # Find matching closing brace by counting depth
-            depth = 0
-            for i in range(start, len(cleaned)):
-                if cleaned[i] == '{':
-                    depth += 1
-                elif cleaned[i] == '}':
-                    depth -= 1
-                    if depth == 0:
-                        try:
-                            return json.loads(cleaned[start:i + 1])
-                        except json.JSONDecodeError:
-                            break  # try next strategy
-
-    # Strategy 2: try the whole thing stripped
+    # Strategy 1: try the whole cleaned text first (fastest, most reliable)
     stripped = cleaned.strip()
     if stripped.startswith("{"):
         try:
             return json.loads(stripped)
         except json.JSONDecodeError:
             pass
+
+    # Strategy 2: find {"nodes" start and parse from there (handles thinking preamble).
+    # Uses json.JSONDecoder.raw_decode to avoid brace-counting bugs with braces in strings.
+    decoder = json.JSONDecoder()
+    for pattern in [r'\{\s*"nodes"\s*:', r"\{\s*'nodes'\s*:"]:
+        match = re.search(pattern, cleaned)
+        if match:
+            try:
+                obj, _ = decoder.raw_decode(cleaned, match.start())
+                return obj
+            except json.JSONDecodeError:
+                pass
 
     # Strategy 3: first { to last }
     start = cleaned.find("{")

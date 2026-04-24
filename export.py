@@ -15,6 +15,7 @@ Prerequisites:
 """
 
 import argparse, asyncio, json, os, re, subprocess, sys, tempfile
+from datetime import datetime
 
 from log import logger
 import aiohttp
@@ -100,7 +101,6 @@ def find_peak_snapshot(snapshots: list[dict]) -> dict:
 
 
 def format_date(ts: float) -> str:
-    from datetime import datetime
     return datetime.fromtimestamp(ts).strftime("%d %B %Y")
 
 
@@ -507,6 +507,125 @@ def _fmt_recap_items(value) -> list[str]:
     return [s for s in result if s]
 
 
+_SKIP_RECAP_KEYS = {"schema_version", "transcript_stats"}
+_V3_STRUCTURED_KEYS = {
+    "positioning", "value_proposition",
+    "positioning_statement", "scope_boundaries_non_goals",
+}
+_POSITIONING_LABELS = {
+    "what_to_sell": "What to sell?",
+    "why_now": "Why now?",
+    "why_well_positioned": "Why are we well positioned?",
+    "to_whom": "To whom?",
+}
+_VP_LABELS = {
+    "what_we_do": "What do we do?",
+    "how_we_do_it": "How do we do it?",
+    "how_we_get_paid": "How do we get paid?",
+}
+
+
+def _format_recap(recap: dict) -> str:
+    """Convert a recap dict to human-readable structured text for LLM prompts."""
+    lines = []
+
+    positioning = recap.get("positioning")
+    if positioning:
+        lines.append("=== POSITIONING ===")
+        for key, label in _POSITIONING_LABELS.items():
+            val = positioning.get(key)
+            if val:
+                items_str = "; ".join(str(v) for v in val) if isinstance(val, list) else str(val)
+                lines.append(f"  {label:<38} → {items_str}")
+        lines.append("")
+
+    value_prop = recap.get("value_proposition")
+    if value_prop:
+        lines.append("=== VALUE PROPOSITION ===")
+        for key, label in _VP_LABELS.items():
+            val = value_prop.get(key)
+            if val:
+                items_str = "; ".join(str(v) for v in val) if isinstance(val, list) else str(val)
+                lines.append(f"  {label:<38} → {items_str}")
+        lines.append("")
+
+    pos_stmt = recap.get("positioning_statement")
+    if pos_stmt:
+        lines.append("=== POSITIONING STATEMENT ===")
+        lines.append(f'"{pos_stmt}"')
+        lines.append("")
+
+    scope = recap.get("scope_boundaries_non_goals")
+    if scope:
+        lines.append("=== SCOPE / BOUNDARIES / NON-GOALS ===")
+        items = scope if isinstance(scope, list) else [scope]
+        for item in items:
+            lines.append(f"  - {item}")
+        lines.append("")
+
+    # Unknown / V2-style keys
+    _known = _SKIP_RECAP_KEYS | _V3_STRUCTURED_KEYS
+    for key, val in recap.items():
+        if key in _known or not val:
+            continue
+        label = key.replace("_", " ").upper()
+        lines.append(f"=== {label} ===")
+        if isinstance(val, list):
+            for item in val:
+                if isinstance(item, dict):
+                    topics = item.get("topics", "")
+                    if isinstance(topics, list):
+                        topics = " ↔ ".join(topics)
+                    insight = item.get("insight", "")
+                    line = f"{topics} : {insight}" if topics and insight else (topics or insight or str(item))
+                    lines.append(f"  - {line}")
+                else:
+                    lines.append(f"  - {item}")
+        elif isinstance(val, dict):
+            lines.append(f"  {json.dumps(val, ensure_ascii=False)}")
+        else:
+            lines.append(f"  {val}")
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+
+def _build_user_prompt(
+    recap: dict,
+    transcript: str,
+    instructions: str | None,
+    current_deck_spec: dict | None,
+    session_topic: str = "",
+    session_date: str = "",
+    reminder: str = "",
+) -> str:
+    """Build the LLM user prompt for deck_spec generation."""
+    parts = []
+    if instructions and instructions.strip():
+        parts.append(
+            "INSTRUCTIONS (s'appliquent à TOUTES les slides — "
+            "titres, contenus, langue, ton) :\n" + instructions.strip()
+        )
+    if session_topic or session_date:
+        ctx = []
+        if session_topic:
+            ctx.append(f"Sujet : {session_topic}")
+        if session_date:
+            ctx.append(f"Date : {session_date}")
+        parts.append("CONTEXTE :\n" + "\n".join(ctx))
+    parts.append("RÉCAP :\n" + _format_recap(recap))
+    parts.append("TRANSCRIPT (extrait) :\n" + transcript)
+    if current_deck_spec:
+        parts.append(
+            "DECK ACTUEL :\n"
+            + json.dumps(current_deck_spec, ensure_ascii=False, indent=2)
+        )
+    if reminder:
+        parts.append(reminder)
+    parts.append("Génère le deck_spec JSON complet.")
+    return "\n\n".join(parts)
+
+
 _CARDS_HEADING_MARKER = "Lorem ipsum dolor"
 _CARDS_CONTENT_MARKER = "Aenean vulputate"
 
@@ -699,6 +818,11 @@ LAYOUT_CATALOG = {
         "layout_idx": 35,
         "slide_copy_idx": 11,  # slide 12 du template
     },
+    "divider": {
+        "description": "Séparateur de section (numéro + titre de section)",
+        "slots": "title (str), number (str)",
+        "layout_idx": 14,  # Divider 2 in template_cap_blank.pptx
+    },
 }
 
 _LAYOUT_CATALOG_STR = "\n".join(
@@ -758,6 +882,13 @@ def _assemble_pptx(deck_spec: dict, output: str) -> None:
             if slots.get("duration"):
                 slide.placeholders[11].text = slots["duration"]
 
+        elif layout_name == "divider":
+            slide.placeholders[0].text = slots.get("title", "")
+            try:
+                slide.placeholders[23].text = slots.get("number", "")  # ph[23] = body text in Divider 2
+            except (KeyError, IndexError):
+                logger.warning("_assemble_pptx: divider ph[23] not found")
+
         elif layout_name in ("text-large", "quote-large"):
             slide.placeholders[0].text = slots.get("title", "")
             slide.placeholders[22].text = slots.get("body", "")
@@ -810,15 +941,30 @@ CATALOGUE DE LAYOUTS DISPONIBLES :
 RÈGLES :
 - Choisis le layout le plus approprié au contenu de chaque slide.
 - Pour "bullets" : max 6 items, max 15 mots par item.
-- Pour les contenus pouvant être découpés en éléments parallèles (catégories, thèmes, acteurs, étapes, dimensions) : utilise "cards-3", "cards-4", "cards-5" ou "cards-4-rounded" en priorité plutôt que "bullets" ou "three-columns".
+- Pour les contenus découpables en éléments parallèles (catégories, thèmes, étapes, dimensions) : utilise "cards-3", "cards-4", "cards-5" ou "cards-4-rounded" en priorité.
   Choisis le nombre selon la richesse du contenu (3 = synthèse, 4-5 = détail).
   "cards-4-rounded" est une variante visuelle de "cards-4" : varie les deux pour éviter la répétition.
-- Si un DECK ACTUEL est fourni, applique les INSTRUCTIONS en le modifiant
-  (ne recrée pas de zéro sauf si explicitement demandé).
+- Pour "divider" : utilise-le pour introduire chaque grande section (ex. POSITIONING, VALUE PROPOSITION).
+- Si un DECK ACTUEL est fourni, applique les INSTRUCTIONS en le modifiant (ne recrée pas de zéro sauf si explicitement demandé).
 - Max 15 slides. Si le contenu dépasse, priorise et condense.
 - Output : JSON uniquement. Aucun texte autour. Aucune fence markdown.
 - Format attendu :
   {{"schema_version": 1, "slides": [{{"layout": "...", "slots": {{...}}}}]}}
+
+STRUCTURE RECOMMANDÉE pour un recap de type Positioning/Value Proposition :
+1. cover         — slide de titre (topic, date, durée)
+2. bullets/cards — vue d'ensemble des thèmes abordés (optionnel)
+3. divider       — séparateur "POSITIONING" (number "01")
+4. Une slide par sous-thème de positioning (what_to_sell, why_now, why_well_positioned, to_whom)
+   → Préfère cards-* pour les listes parallèles, bullets pour les items linéaires
+5. quote-large   — positioning statement
+6. divider       — séparateur "VALUE PROPOSITION" (number "02")
+7. Une slide par sous-thème de value proposition (what_we_do, how_we_do_it, how_we_get_paid)
+8. bullets       — scope / boundaries / non-goals
+9. [optionnel]   — slide de conclusion ou wrap-up
+
+Adapte cette structure au contenu réel. Si un champ est absent ou vide dans le récap,
+ne génère pas de slide pour lui. Si le récap a une structure différente, adapte en conséquence.
 """
 
 
@@ -828,8 +974,10 @@ async def generate_deck_spec(
     instructions: str | None,
     current_deck_spec: dict | None,
     chain: list[dict],
+    session_topic: str = "",
+    session_date: str = "",
 ) -> dict:
-    """Call LLM to generate or update a deck_spec from transcript + recap + instructions.
+    """Generate a deck_spec from transcript + recap + instructions via LLM.
 
     Returns the deck_spec dict. Retries once on invalid JSON.
     Raises RuntimeError if all tiers fail.
@@ -839,42 +987,42 @@ async def generate_deck_spec(
     if len(transcript) > max_transcript:
         transcript = "[...]\n" + transcript[-max_transcript:]
 
-    def _build_user_prompt(reminder: str = "") -> str:
-        parts = [f"TRANSCRIPT :\n{transcript}", f"RÉCAP :\n{json.dumps(recap, ensure_ascii=False, indent=2)}"]
-        if current_deck_spec:
-            parts.append(f"DECK ACTUEL :\n{json.dumps(current_deck_spec, ensure_ascii=False, indent=2)}")
-        if instructions and instructions.strip():
-            parts.append(f"INSTRUCTIONS :\n{instructions.strip()}")
-        if reminder:
-            parts.append(reminder)
-        parts.append("Génère le deck_spec JSON.")
-        return "\n\n".join(parts)
-
     last_error = None
     for attempt in range(2):
-        reminder = "" if attempt == 0 else "RAPPEL : output JSON uniquement, aucun texte, aucune fence markdown."
-        user_prompt = _build_user_prompt(reminder)
+        reminder = (
+            "" if attempt == 0
+            else "RAPPEL : output JSON uniquement, aucun texte, aucune fence markdown."
+        )
+        user_prompt = _build_user_prompt(
+            recap=recap,
+            transcript=transcript,
+            instructions=instructions,
+            current_deck_spec=current_deck_spec,
+            session_topic=session_topic,
+            session_date=session_date,
+            reminder=reminder,
+        )
 
         for tier in chain:
             provider, model = tier["provider"], tier["model"]
             try:
                 raw = await _llm_call_slides(tier, _DECK_SPEC_SYSTEM, user_prompt)
-                # Strip markdown fences if present
                 raw = raw.strip()
                 if raw.startswith("```"):
                     raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
                     raw = re.sub(r"\n?```$", "", raw)
                     raw = raw.strip()
                 spec = json.loads(raw)
-                # Enforce max slides
                 if len(spec.get("slides", [])) > 15:
-                    logger.warning(f"generate_deck_spec: {len(spec['slides'])} slides, truncating to 15")
+                    logger.warning(
+                        f"generate_deck_spec: {len(spec['slides'])} slides, truncating to 15"
+                    )
                     spec["slides"] = spec["slides"][:15]
                 return spec
             except json.JSONDecodeError as e:
                 logger.warning(f"generate_deck_spec attempt {attempt+1}: JSON parse error — {e}")
                 last_error = e
-                break  # retry with reminder
+                break  # retry outer loop with reminder
             except Exception as e:
                 logger.warning(f"generate_deck_spec tier {provider}/{model} failed: {e}")
                 last_error = e
@@ -921,6 +1069,11 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
           f"transcript={len(transcript)} chars instructions={'yes' if instructions else 'no'} "
           f"deck_spec={'update' if current_deck_spec else 'new'}")
 
+    try:
+        session_date = datetime.fromtimestamp(float(session.get("created_at", 0))).strftime("%d %B %Y")
+    except Exception:
+        session_date = ""
+
     # Generate deck_spec via LLM
     deck_spec = await generate_deck_spec(
         transcript=transcript,
@@ -928,6 +1081,8 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
         instructions=instructions,
         current_deck_spec=current_deck_spec,
         chain=chain,
+        session_topic=topic,
+        session_date=session_date,
     )
 
     # Persist deck_spec
