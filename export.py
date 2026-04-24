@@ -818,6 +818,11 @@ LAYOUT_CATALOG = {
         "layout_idx": 35,
         "slide_copy_idx": 11,  # slide 12 du template
     },
+    "divider": {
+        "description": "Séparateur de section (numéro + titre de section)",
+        "slots": "title (str), number (str)",
+        "layout_idx": 14,  # Divider 2 in template_cap_blank.pptx
+    },
 }
 
 _LAYOUT_CATALOG_STR = "\n".join(
@@ -876,6 +881,13 @@ def _assemble_pptx(deck_spec: dict, output: str) -> None:
             slide.placeholders[10].text = slots.get("date", "")
             if slots.get("duration"):
                 slide.placeholders[11].text = slots["duration"]
+
+        elif layout_name == "divider":
+            slide.placeholders[0].text = slots.get("title", "")
+            try:
+                slide.placeholders[23].text = slots.get("number", "")
+            except (KeyError, IndexError):
+                logger.warning("_assemble_pptx: divider ph[23] not found")
 
         elif layout_name in ("text-large", "quote-large"):
             slide.placeholders[0].text = slots.get("title", "")

@@ -613,3 +613,25 @@ def test_build_user_prompt_no_instructions():
         current_deck_spec=None,
     )
     assert "INSTRUCTIONS" not in prompt2
+
+
+def test_assemble_divider_layout(tmp_path):
+    """divider layout produces a slide with title and number filled."""
+    import export as exp
+    from pptx import Presentation
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {"layout": "divider", "slots": {"title": "POSITIONING", "number": "01"}},
+        ],
+    }
+    output = str(tmp_path / "divider.pptx")
+    exp._assemble_pptx(deck_spec, output)
+    assert os.path.exists(output)
+    prs = Presentation(output)
+    assert len(prs.slides) == 1
+    slide = prs.slides[0]
+    all_text = " ".join(sh.text_frame.text for sh in slide.shapes if sh.has_text_frame)
+    assert "POSITIONING" in all_text
+    assert "01" in all_text
