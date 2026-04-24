@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## What This Is
 
-Mímir: a real-time conversation visualization system that captures live speech, transcribes it, and builds an animated knowledge graph of concepts and relationships as people talk. Named after the Norse keeper of the well of wisdom.
+Mímir: a real-time conversation visualization system that captures live speech, transcribes it, builds an animated knowledge graph of concepts and relationships as people talk, and enables the generation of a concise recap and Capgemini Invent–branded template slides to rapidly activate decision-making. Named after the Norse keeper of the well of wisdom.
 
 Formerly "LiveMind". Now runs sovereign on a DGX Spark (hugin.local) with all inference local. No external API calls required for core operation (cloud LLMs available as fallback).
 
@@ -16,13 +16,28 @@ Browser (Monitor View)              DGX Spark (hugin.local)
 getUserMedia → Web Audio API
   → VAD (energy threshold)
   → PCM chunks via WebSocket ──→  app.py (FastAPI)
-                                    → POST to localhost STT service
-                                      (faster-whisper :8766 | parakeet :8010 | canary :8011)
-                                    → transcript to LLM proxy
-                                      (Ollama localhost:11434 | Gemini API | Claude API)
+                                    → stt_worker.py → STT backend (switchable at runtime)
+                                      • faster-whisper :8766 (défaut, via stt.btrbot.com)
+                                        └─ whisper_server.py (local, CPU int8)
+                                      • Parakeet TDT :8010 (NeMo, 3300x RTFx)
+                                      • Canary 1b :8011 (NeMo, meilleure précision)
+                                      circuit breaker + semaphore (max 3 req parallèles)
+                                    → transcript to LLM proxy (fallback chain)
+                                      • Ollama localhost:11434 (gemma4:26b/31b)
+                                      • Gemini API (gemini-2.5-flash)
+                                      • Claude API (claude-sonnet-4, fallback)
                                     → reconciler (scoring, decay, budget)
                                     → graph update via WebSocket ──→  Browser (Main View)
-                                    → SQLite persistence
+                                    → SQLite persistence (sessions, segments,
+                                      snapshots, actions, recaps, corpus)
+
+Post-session exports (export.py):
+  sessions.html → export_pdf / export_video / export_pptx
+                  (Capgemini Invent template, AI-generated deck spec)
+Corpus (corpus.py + corpus.html):
+  document chunks → Q&A context injection
+Live Slides view (/slides):
+  real-time key messages pushed to a presenter slide view (html)
 ```
 
 Audio capture happens in the browser (monitor view), NOT on the server. The server never touches a microphone. This is the key architectural difference from the original LiveMind.
