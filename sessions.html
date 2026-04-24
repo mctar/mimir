@@ -3892,6 +3892,105 @@ function esc(str) {
   return el.innerHTML;
 }
 
+// ─── Import Transcript Modal ──────────────────────────────────────────────
+
+function openImportModal() {
+  document.getElementById('import-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('import-topic').value = '';
+  document.getElementById('import-textarea').value = '';
+  document.getElementById('import-error').textContent = '';
+  document.getElementById('btn-import-submit').disabled = true;
+  document.getElementById('import-overlay').style.display = 'flex';
+  document.getElementById('import-topic').focus();
+}
+
+function closeImportModal() {
+  document.getElementById('import-overlay').style.display = 'none';
+}
+
+function updateImportBtn() {
+  const ok = document.getElementById('import-topic').value.trim() &&
+             document.getElementById('import-textarea').value.trim();
+  document.getElementById('btn-import-submit').disabled = !ok;
+}
+
+function onImportFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('import-textarea').value = e.target.result;
+    updateImportBtn();
+  };
+  reader.readAsText(file, 'utf-8');
+  input.value = '';
+}
+
+(function setupImportDrop() {
+  const zone = document.getElementById('import-drop-zone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      document.getElementById('import-textarea').value = ev.target.result;
+      updateImportBtn();
+    };
+    reader.readAsText(file, 'utf-8');
+  });
+})();
+
+async function submitImport() {
+  const topic = document.getElementById('import-topic').value.trim();
+  const date  = document.getElementById('import-date').value;
+  const transcript = document.getElementById('import-textarea').value.trim();
+  const errEl = document.getElementById('import-error');
+  const btn   = document.getElementById('btn-import-submit');
+
+  errEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+
+  try {
+    const resp = await fetch('/v1/sessions/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic, date, transcript }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errEl.textContent = data.error || 'Import failed';
+      btn.disabled = false;
+      btn.textContent = 'Import';
+      return;
+    }
+    closeImportModal();
+    await loadSessions();
+    // Briefly highlight the new session row
+    const newId = data.session_id;
+    setTimeout(() => {
+      for (const row of document.querySelectorAll('#session-list tr')) {
+        if (row.textContent.includes(newId)) {
+          row.style.transition = 'background 0.4s';
+          row.style.background = 'rgba(113,96,158,0.18)';
+          setTimeout(() => { row.style.background = ''; }, 2200);
+          break;
+        }
+      }
+    }, 80);
+    toast(`Imported "${topic}" — ${data.segments} segments`);
+  } catch (e) {
+    errEl.textContent = String(e);
+    btn.disabled = false;
+    btn.textContent = 'Import';
+  }
+  btn.textContent = 'Import';
+}
+
 function toast(msg, isError) {
   const el = document.getElementById('toast');
   el.textContent = msg;
