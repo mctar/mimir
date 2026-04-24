@@ -5,8 +5,15 @@ Exposes POST /v1/transcribe on port 8766.
 
 Request:  raw PCM float32 bytes, query params: sample_rate, language, initial_prompt
 Response: {"text": "...", "language": "...", "processing_s": N}
+
+Environment variables:
+  WHISPER_MODEL_SIZE   Model to load (default: "small"). Use "large-v3" on GPU servers.
+  WHISPER_DEVICE       Device: "cpu" or "cuda" (default: "cpu").
+  WHISPER_COMPUTE_TYPE Quantization: "int8", "float16", "int8_float16" (default: "int8").
 """
 
+import asyncio
+import os
 import time
 import numpy as np
 from fastapi import FastAPI, Request, Query
@@ -15,7 +22,9 @@ import uvicorn
 from faster_whisper import WhisperModel
 from log import logger
 
-MODEL_SIZE = "small"
+MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "small")
+DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
+COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
 
 # Default language when the client sends "" or "auto".
 # Set to "" to keep auto-detection.
@@ -29,8 +38,8 @@ DEFAULT_PROMPT = (
     "Mímir, Whisper, Anthropic, Azure, Ollama, FastAPI."
 )
 
-logger.info(f"Loading Whisper model '{MODEL_SIZE}' on CPU (int8)...")
-model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
+logger.info(f"Loading Whisper model '{MODEL_SIZE}' on {DEVICE} ({COMPUTE_TYPE})...")
+model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
 logger.info("Model ready.")
 
 app = FastAPI()
@@ -52,17 +61,22 @@ async def transcribe(
     prompt = initial_prompt or DEFAULT_PROMPT
 
     t0 = time.time()
-    segments, info = model.transcribe(
-        audio,
-        language=lang,
-        initial_prompt=prompt,
-        beam_size=5,
-        vad_filter=True,
-        temperature=0,
-        condition_on_previous_text=True,
-        compression_ratio_threshold=2.4,
-        log_prob_threshold=-1.0,
-    )
+
+    def _run():
+        segs, info = model.transcribe(
+            audio,
+            language=lang,
+            initial_prompt=prompt,
+            beam_size=5,
+            vad_filter=True,
+            temperature=0,
+            condition_on_previous_text=True,
+            compression_ratio_threshold=2.4,
+            log_prob_threshold=-1.0,
+        )
+        return list(segs), info
+
+    segments, info = await asyncio.to_thread(_run)
     text = " ".join(s.text for s in segments).strip()
     processing_s = time.time() - t0
 
@@ -74,5 +88,5 @@ async def transcribe(
 
 
 if __name__ == "__main__":
-    logger.info("Whisper server starting on http://localhost:8766")
+    logger.info(f"Whisper server starting on http://localhost:8766 (model={MODEL_SIZE}, device={DEVICE})")
     uvicorn.run(app, host="0.0.0.0", port=8766, log_level="warning")
