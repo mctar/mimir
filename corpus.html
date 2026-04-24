@@ -381,12 +381,13 @@
 
           const checked = doc.active ? 'checked' : '';
           const dateStr = formatDate(doc.ingested_at || doc.created_at);
-          const titleRaw = doc.title || doc.filename || String(doc.id);
+          const titleRaw = doc.label || doc.title || doc.filename || String(doc.id);
           const titleStr = escapeHtml(titleRaw);
           const sourceStr = escapeHtml(doc.source || doc.filename || '–');
+          const roleStr = doc.role ? escapeHtml(doc.role.length > 70 ? doc.role.slice(0, 67) + '…' : doc.role) : '';
 
           tr.innerHTML = `
-            <td class="td-title">${titleStr}</td>
+            <td class="td-title">${titleStr}${roleStr ? `<br><span style="font-size:0.78em;opacity:0.6;font-weight:400">${roleStr}</span>` : ''}</td>
             <td class="td-source" title="${sourceStr}">${sourceStr}</td>
             <td class="td-date">${dateStr}</td>
             <td style="text-align:center">

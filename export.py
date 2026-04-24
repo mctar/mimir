@@ -20,6 +20,7 @@ from datetime import datetime
 from log import logger
 import aiohttp
 import db
+import corpus as corpus_module
 
 
 # ─── LLM config for slides (mirrors routes_facilitator.py pattern) ────────────
@@ -365,19 +366,6 @@ async def export_slides(session_id: str, output: str, db_path: str = "livemind.d
         raise ValueError(f"Session '{session_id}' has no recap. Generate one first.")
     recap = recap_data["recap"]
 
-    # Build concept summary from peak graph snapshot
-    snapshots = await db.get_session_snapshots(session_id)
-    nodes_text = edges_text = ""
-    if snapshots:
-        peak = find_peak_snapshot(snapshots)
-        nodes = peak["graph"].get("nodes", {})
-        active = [n for n in nodes.values() if n.get("state") == "active"]
-        nodes_text = ", ".join(n.get("label", n.get("id", "?")) for n in active[:24])
-        edges_text = "; ".join(
-            f"{e.get('source', '?')} → {e.get('target', '?')}"
-            for e in peak["graph"].get("edges", [])[:20]
-        )
-
     duration = ""
     if session.get("ended_at") and session.get("created_at"):
         duration = format_duration(session["ended_at"] - session["created_at"])
@@ -409,20 +397,13 @@ Non-obvious connections:
 Tensions & contradictions:
 {_fmt_list(recap.get('contradictions', []))}
 
-Active concepts:
-{nodes_text}
-
-Relationships:
-{edges_text}
-
 Output ONLY the complete HTML. Nothing else."""
 
     if not chain:
         raise RuntimeError("No LLM chain provided. Cannot generate slides.")
 
     topic = session.get('topic', 'Untitled')
-    n_nodes = len(nodes_text.split(",")) if nodes_text else 0
-    print(f"Slides export: session={session_id[:8]}… topic='{topic}' nodes={n_nodes}")
+    print(f"Slides export: session={session_id[:8]}… topic='{topic}'")
     print(f"  Prompt: {len(user_prompt)} chars | Chain: {[t['provider']+'/'+t['model'] for t in chain]}")
 
     html_text = None
@@ -590,6 +571,66 @@ def _format_recap(recap: dict) -> str:
     return "\n".join(lines).strip()
 
 
+def _format_corpus_for_slides(docs: list[dict], max_chars: int = 300_000) -> str:
+    """Format active corpus docs for injection into the slides generation prompt.
+    Groups chunks by source document with metadata headers.
+    If total content exceeds max_chars, includes only metadata headers (no chunk content).
+    """
+    if not docs:
+        return ""
+
+    from collections import defaultdict
+    by_source: dict[str, list[str]] = defaultdict(list)
+    meta_by_source: dict[str, dict] = {}
+    for doc in docs:
+        src = doc["source"] or doc["title"]
+        by_source[src].append(doc["content"])
+        if src not in meta_by_source:
+            meta_by_source[src] = {
+                "label": doc.get("label") or src,
+                "role": doc.get("role"),
+                "key_messages": doc.get("key_messages"),
+                "usages": doc.get("usages"),
+            }
+
+    def _build_header(m: dict) -> str:
+        header = f"=== {m['label']} ==="
+        if m["role"]:
+            header += f"\nRôle : {m['role']}"
+        if m["key_messages"]:
+            try:
+                kms = json.loads(m["key_messages"]) if isinstance(m["key_messages"], str) else (m["key_messages"] or [])
+            except Exception:
+                kms = []
+            if kms:
+                header += "\nMessages clés :\n" + "\n".join(f"  • {k}" for k in kms)
+        if m["usages"]:
+            try:
+                us = json.loads(m["usages"]) if isinstance(m["usages"], str) else (m["usages"] or [])
+            except Exception:
+                us = []
+            if us:
+                header += "\nUsages : " + " · ".join(us)
+        return header
+
+    # Build full sections (header + content)
+    sections = []
+    for src, chunks in by_source.items():
+        header = _build_header(meta_by_source[src]) + "\n---"
+        sections.append(header + "\n" + "\n\n".join(chunks))
+
+    full = "\n\n".join(sections)
+    if len(full) <= max_chars:
+        return full
+
+    # Fallback: headers only (no chunk content) to stay within budget
+    logger.warning(f"Corpus too large for slides ({len(full)} chars > {max_chars}), including metadata only")
+    headers_only = []
+    for src in by_source:
+        headers_only.append(_build_header(meta_by_source[src]))
+    return "\n\n".join(headers_only)
+
+
 def _build_user_prompt(
     recap: dict,
     transcript: str,
@@ -598,6 +639,7 @@ def _build_user_prompt(
     session_topic: str = "",
     session_date: str = "",
     reminder: str = "",
+    corpus_block: str = "",
 ) -> str:
     """Build the LLM user prompt for deck_spec generation."""
     parts = []
@@ -615,6 +657,21 @@ def _build_user_prompt(
         parts.append("CONTEXTE :\n" + "\n".join(ctx))
     parts.append("RÉCAP :\n" + _format_recap(recap))
     parts.append("TRANSCRIPT (extrait) :\n" + transcript)
+    if corpus_block:
+        parts.append(
+            "DOCUMENTS DE RÉFÉRENCE DISPONIBLES\n\n"
+            "Ces documents constituent un support contextuel uniquement.\n"
+            "RÈGLE ABSOLUE : le transcript de la session est la source primaire du contenu des slides.\n"
+            "N'introduis aucune information non discutée en séance.\n\n"
+            "En revanche :\n"
+            "- Si un sujet du transcript résonne avec un document du corpus, tu peux enrichir\n"
+            "  le contenu de la slide avec des éléments précis de ce document.\n"
+            "- Si un document contient des éléments pertinents NON couverts dans le transcript,\n"
+            "  tu peux ajouter dans le champ \"notes\" de la slide :\n"
+            "  \"\\u2139\\ufe0f [Nom du document] contient des éléments complémentaires sur ce sujet.\"\n"
+            "- Cite toujours le document source entre crochets lorsque tu empruntes un élément.\n\n"
+            + corpus_block
+        )
     if current_deck_spec:
         parts.append(
             "DECK ACTUEL :\n"
@@ -976,6 +1033,7 @@ async def generate_deck_spec(
     chain: list[dict],
     session_topic: str = "",
     session_date: str = "",
+    corpus_block: str = "",
 ) -> dict:
     """Generate a deck_spec from transcript + recap + instructions via LLM.
 
@@ -983,7 +1041,7 @@ async def generate_deck_spec(
     Raises RuntimeError if all tiers fail.
     """
     # Truncate transcript — keep tail (most recent content is most relevant)
-    max_transcript = 8000
+    max_transcript = 200000
     if len(transcript) > max_transcript:
         transcript = "[...]\n" + transcript[-max_transcript:]
 
@@ -1001,6 +1059,7 @@ async def generate_deck_spec(
             session_topic=session_topic,
             session_date=session_date,
             reminder=reminder,
+            corpus_block=corpus_block,
         )
 
         for tier in chain:
@@ -1064,10 +1123,15 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
     segments = await db.get_session_transcript(session_id)
     transcript = " ".join(s["text"] for s in segments if not s.get("is_partial"))
 
+    # Load active corpus docs for contextual enrichment
+    corpus_docs = await corpus_module.get_active_docs(db._db) if db._db else []
+    corpus_block = _format_corpus_for_slides(corpus_docs)
+
     topic = session.get("topic", "Untitled")
     logger.info(f"PPTX export: session={session_id[:8]}… topic='{topic}' "
           f"transcript={len(transcript)} chars instructions={'yes' if instructions else 'no'} "
-          f"deck_spec={'update' if current_deck_spec else 'new'}")
+          f"deck_spec={'update' if current_deck_spec else 'new'} "
+          f"corpus={len(corpus_docs)} chunks")
 
     try:
         session_date = datetime.fromtimestamp(float(session.get("created_at", 0))).strftime("%d %B %Y")
@@ -1083,6 +1147,7 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
         chain=chain,
         session_topic=topic,
         session_date=session_date,
+        corpus_block=corpus_block,
     )
 
     # Persist deck_spec

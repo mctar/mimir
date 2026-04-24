@@ -784,6 +784,48 @@ async def get_session_snapshots_endpoint(session_id: str):
 
 # ─── Q&A ─────────────────────────────────────────────────────────────────────
 
+def _format_corpus_with_metadata(docs: list[dict]) -> str:
+    """Group corpus chunks by source document and prepend document-level metadata headers."""
+    from collections import defaultdict
+    by_source: dict[str, list[str]] = defaultdict(list)
+    meta_by_source: dict[str, dict] = {}
+    for doc in docs:
+        src = doc["source"] or doc["title"]
+        by_source[src].append(doc["content"])
+        if src not in meta_by_source:
+            meta_by_source[src] = {
+                "label": doc.get("label") or src,
+                "role": doc.get("role"),
+                "key_messages": doc.get("key_messages"),
+                "usages": doc.get("usages"),
+            }
+
+    parts = []
+    for src, chunks in by_source.items():
+        m = meta_by_source[src]
+        header = f"=== {m['label']} ==="
+        if m["role"]:
+            header += f"\nRôle : {m['role']}"
+        if m["key_messages"]:
+            try:
+                kms = json.loads(m["key_messages"]) if isinstance(m["key_messages"], str) else (m["key_messages"] or [])
+            except Exception:
+                kms = []
+            if kms:
+                header += "\nMessages clés :\n" + "\n".join(f"  • {k}" for k in kms)
+        if m["usages"]:
+            try:
+                us = json.loads(m["usages"]) if isinstance(m["usages"], str) else (m["usages"] or [])
+            except Exception:
+                us = []
+            if us:
+                header += "\nUsages : " + " · ".join(us)
+        header += "\n---"
+        parts.append(header + "\n" + "\n\n".join(chunks))
+
+    return "\n\n".join(parts)
+
+
 @app.post("/v1/sessions/{session_id}/qa")
 async def session_qa(session_id: str, request: Request):
     try:
@@ -801,17 +843,16 @@ async def session_qa(session_id: str, request: Request):
         return JSONResponse({"error": f"Session {session_id} not found"}, status_code=404)
 
     segments = await db.get_session_transcript(session_id)
-    transcript = " ".join(seg.get("cleaned_text") or seg["text"] for seg in segments)[-16000:]
+    transcript = " ".join(seg.get("cleaned_text") or seg["text"] for seg in segments)[-200000:]
 
     corpus_text = ""
     if corpus_ids and db._db is not None:
         docs = await corpus_module.get_docs_by_ids(db._db, corpus_ids)
         if docs:
-            parts = [f"[{d['title']}]\n{d['content']}" for d in docs]
-            corpus_text = "\n\n".join(parts)
-            if len(corpus_text) > 80_000:
-                corpus_text = corpus_text[:80_000]
-                logger.warning("Q&A: corpus tronqué à 80 000 chars")
+            corpus_text = _format_corpus_with_metadata(docs)
+            if len(corpus_text) > 300_000:
+                corpus_text = corpus_text[:300_000]
+                logger.warning("Q&A: corpus tronqué à 300 000 chars")
 
     system = (
         "Tu es un assistant d'analyse de session. "
@@ -1462,7 +1503,7 @@ async def generate_synthesis(request: Request):
     if len(session_ids) < 2:
         return JSONResponse({"error": "Need at least 2 sessions"}, status_code=400)
 
-    # Load each session's recap + graph
+    # Load each session's recap
     sessions_data = []
     missing_recaps = []
     for sid in session_ids:
@@ -1470,7 +1511,6 @@ async def generate_synthesis(request: Request):
         if not recap:
             missing_recaps.append(sid)
             continue
-        snapshot = await db.get_latest_snapshot(sid)
         # Get session metadata
         all_sessions = await db.list_sessions()
         meta = next((s for s in all_sessions if s["id"] == sid), {})
@@ -1480,7 +1520,6 @@ async def generate_synthesis(request: Request):
             "created_at": meta.get("created_at", 0),
             "ended_at": meta.get("ended_at"),
             "recap": recap["recap"],
-            "snapshot": snapshot,
         })
 
     if missing_recaps:
@@ -1524,29 +1563,12 @@ async def generate_synthesis(request: Request):
         if r.get("contradictions"):
             block += 'CONTRADICTIONS:\n' + '\n'.join(f'  - {c}' for c in r["contradictions"]) + '\n'
 
-        # Include graph
-        if sd["snapshot"] and sd["snapshot"].get("graph"):
-            graph = sd["snapshot"]["graph"]
-            nodes = graph.get("nodes", {})
-            edges = graph.get("edges", [])
-            active = {nid: n for nid, n in nodes.items() if n.get("state") == "active"}
-            if active:
-                id_to_label = {nid: n.get("label", nid) for nid, n in nodes.items()}
-                block += 'GRAPH NODES: ' + ', '.join(n.get("label", nid) for nid, n in active.items()) + '\n'
-                edge_strs = []
-                for e in edges:
-                    src = id_to_label.get(e.get("source", ""), e.get("source", ""))
-                    tgt = id_to_label.get(e.get("target", ""), e.get("target", ""))
-                    edge_strs.append(f'{src} --[{e.get("label", "")}]--> {tgt}')
-                if edge_strs:
-                    block += 'GRAPH EDGES: ' + '; '.join(edge_strs) + '\n'
-
         session_blocks.append(block)
 
     all_sessions_text = '\n---\n\n'.join(session_blocks)
 
     system_prompt = f"""You synthesize insights across multiple session recaps from the same event or day.
-You have access to each session's recap (elevator pitch, key takeaways, connections, summary) AND its knowledge graph.
+You have access to each session's recap (elevator pitch, key takeaways, connections, summary).
 
 Your job is to find the threads that run BETWEEN sessions — ideas that evolved, echoed, or contradicted each other across different conversations.
 

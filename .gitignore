@@ -29,6 +29,9 @@ specs/
 *-spec.md
 *-spec-*.md
 
+# Corpus documentaire confidentiel (documents + métadonnées)
+corpus/
+
 # Brand assets (confidential)
 assets/template_cap_pptx.pptx
 

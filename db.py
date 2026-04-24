@@ -98,6 +98,18 @@ async def init_db(path: str = DB_PATH):
     if "active" not in corpus_cols:
         await _db.execute("ALTER TABLE corpus_docs ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
 
+    # Add document-level metadata columns to corpus_docs (idempotent)
+    cursor = await _db.execute("PRAGMA table_info(corpus_docs)")
+    corpus_cols = {row[1] for row in await cursor.fetchall()}
+    for col_name, col_def in [
+        ("label", "TEXT"),
+        ("role", "TEXT"),
+        ("key_messages", "TEXT"),
+        ("usages", "TEXT"),
+    ]:
+        if col_name not in corpus_cols:
+            await _db.execute(f"ALTER TABLE corpus_docs ADD COLUMN {col_name} {col_def}")
+
     # Drop embedding column from corpus_docs if present (embeddings no longer used)
     cursor = await _db.execute("PRAGMA table_info(corpus_docs)")
     corpus_cols = {row[1] for row in await cursor.fetchall()}
