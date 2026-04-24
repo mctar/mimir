@@ -1072,6 +1072,8 @@ async def generate_deck_spec(
     if len(transcript) > max_transcript:
         transcript = "[...]\n" + transcript[-max_transcript:]
 
+    # NOTE: This inner function is superseded by the module-level _build_user_prompt()
+    # and will be removed when generate_deck_spec() is rewritten in the next task.
     def _build_user_prompt(reminder: str = "") -> str:
         parts = [f"TRANSCRIPT :\n{transcript}", f"RÉCAP :\n{json.dumps(recap, ensure_ascii=False, indent=2)}"]
         if current_deck_spec:

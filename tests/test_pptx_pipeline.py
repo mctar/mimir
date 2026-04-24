@@ -524,8 +524,6 @@ def test_assemble_pptx_no_template_slides(tmp_path):
 
 def test_format_recap_v3():
     """_format_recap produces labelled sections for V3 structured fields."""
-    import sys, os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     from export import _format_recap
 
     recap = {
@@ -562,8 +560,6 @@ def test_format_recap_v3():
 
 def test_format_recap_unknown_keys():
     """_format_recap appends non-V3 keys as generic sections."""
-    import sys, os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     from export import _format_recap
 
     recap = {
@@ -580,8 +576,6 @@ def test_format_recap_unknown_keys():
 
 def test_build_user_prompt_instructions_first():
     """Instructions block appears before RÉCAP block in the prompt."""
-    import sys, os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     from export import _build_user_prompt
 
     prompt = _build_user_prompt(
@@ -601,8 +595,6 @@ def test_build_user_prompt_instructions_first():
 
 def test_build_user_prompt_no_instructions():
     """No INSTRUCTIONS block when instructions is None or empty."""
-    import sys, os
-    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
     from export import _build_user_prompt
 
     prompt = _build_user_prompt(
