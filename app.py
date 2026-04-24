@@ -19,6 +19,7 @@ import stt_worker
 from stt_worker import configure_stt, configure_stt_fallback, get_stt_config
 from reconciler import GraphReconciler
 import corpus as corpus_module
+from prompts.graph import mindmap_system, SMALL_MODEL_GRAPH_PREFIX
 
 # ─── Load .env ───
 _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -101,20 +102,6 @@ class _ActiveLLMView:
         with _llm_chain_lock:
             return iter(dict(_llm_chain[0]))
 _active_llm = _ActiveLLMView()
-
-# Extra system prompt for non-Claude models to improve graph quality
-_SMALL_MODEL_GRAPH_PREFIX = """CRITICAL: Output ONLY the raw JSON object. No thinking, no reasoning, no explanation, no markdown fences.
-
-GRAPH EVOLUTION (follow strictly):
-- You MUST add new nodes for every new concept, person, or topic in the NEW SEGMENT
-- Always evolve the graph — never return it unchanged. The conversation is progressing, the graph must too.
-- Every node MUST connect to at least 2 different nodes — no orphans
-- NEVER create a star/hub where all nodes link to one central node
-- Create cross-connections between related concepts, not just to the main topic
-- Vary relationship labels: "enables", "requires", "part of", "contrasts", "drives", "informs", "blocks"
-- Use "group" field (not "type") for node category
-
-"""
 
 # ─── Global state ───
 transcript_queue: queue.Queue = queue.Queue()
@@ -1965,7 +1952,7 @@ async def _call_hugin(body: dict) -> tuple[int, dict]:
     oai_messages = []
     system_text = body.get("system", "")
     # Always prepend the structured-output prefix for local models
-    system_text = _SMALL_MODEL_GRAPH_PREFIX + system_text
+    system_text = SMALL_MODEL_GRAPH_PREFIX + system_text
     oai_messages.append({"role": "system", "content": system_text})
     for msg in body.get("messages", []):
         oai_messages.append({"role": msg["role"], "content": msg["content"]})
@@ -2026,7 +2013,7 @@ async def _call_gemini(body: dict) -> tuple[int, dict]:
     system_text = body.get("system", "")
     if system_text:
         # Gemini is good at JSON but benefits from the same structural hints
-        system_text = _SMALL_MODEL_GRAPH_PREFIX + system_text
+        system_text = SMALL_MODEL_GRAPH_PREFIX + system_text
         oai_messages.append({"role": "system", "content": system_text})
     for msg in body.get("messages", []):
         oai_messages.append({"role": msg["role"], "content": msg["content"]})
