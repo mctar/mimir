@@ -520,3 +520,104 @@ def test_assemble_pptx_no_template_slides(tmp_path):
         f"Expected 2 slides (one per deck_spec entry), got {len(prs.slides)}. "
         "Template Lorem-ipsum slides are leaking into the output."
     )
+
+
+def test_format_recap_v3():
+    """_format_recap produces labelled sections for V3 structured fields."""
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    from export import _format_recap
+
+    recap = {
+        "schema_version": 3,
+        "transcript_stats": {"duration_minutes": 90},
+        "positioning": {
+            "what_to_sell": ["End-to-end reinvention"],
+            "why_now": ["Agentic operations"],
+            "why_well_positioned": ["Tri-pod"],
+            "to_whom": ["Global 2000 CEO"],
+        },
+        "value_proposition": {
+            "what_we_do": ["Design value engines"],
+            "how_we_do_it": ["Connecting functions"],
+            "how_we_get_paid": ["Value-based contracts"],
+        },
+        "positioning_statement": "For Global 2000...",
+        "scope_boundaries_non_goals": ["Not a functional pitch", "Not one-off"],
+    }
+    result = _format_recap(recap)
+    assert "=== POSITIONING ===" in result
+    assert "What to sell?" in result
+    assert "End-to-end reinvention" in result
+    assert "=== VALUE PROPOSITION ===" in result
+    assert "Design value engines" in result
+    assert "=== POSITIONING STATEMENT ===" in result
+    assert "For Global 2000" in result
+    assert "=== SCOPE / BOUNDARIES / NON-GOALS ===" in result
+    assert "Not a functional pitch" in result
+    # Internal metadata must NOT appear as content sections
+    assert "Schema Version" not in result
+    assert "Transcript Stats" not in result
+
+
+def test_format_recap_unknown_keys():
+    """_format_recap appends non-V3 keys as generic sections."""
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    from export import _format_recap
+
+    recap = {
+        "elevator_pitch": "A sharp pitch",
+        "key_takeaways": [{"topics": ["A", "B"], "insight": "They are connected"}],
+    }
+    result = _format_recap(recap)
+    assert "ELEVATOR PITCH" in result
+    assert "A sharp pitch" in result
+    assert "KEY TAKEAWAYS" in result
+    assert "A ↔ B" in result
+    assert "They are connected" in result
+
+
+def test_build_user_prompt_instructions_first():
+    """Instructions block appears before RÉCAP block in the prompt."""
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    from export import _build_user_prompt
+
+    prompt = _build_user_prompt(
+        recap={"elevator_pitch": "test"},
+        transcript="some text",
+        instructions="Translate everything to English",
+        current_deck_spec=None,
+    )
+    instructions_pos = prompt.find("INSTRUCTIONS")
+    recap_pos = prompt.find("RÉCAP")
+    assert instructions_pos >= 0, "INSTRUCTIONS block missing"
+    assert recap_pos >= 0, "RÉCAP block missing"
+    assert instructions_pos < recap_pos, "INSTRUCTIONS must come before RÉCAP"
+    assert "TOUTES les slides" in prompt
+    assert "Translate everything to English" in prompt
+
+
+def test_build_user_prompt_no_instructions():
+    """No INSTRUCTIONS block when instructions is None or empty."""
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+    from export import _build_user_prompt
+
+    prompt = _build_user_prompt(
+        recap={"elevator_pitch": "test"},
+        transcript="some text",
+        instructions=None,
+        current_deck_spec=None,
+    )
+    assert "INSTRUCTIONS" not in prompt
+    assert "RÉCAP" in prompt
+
+    prompt2 = _build_user_prompt(
+        recap={"elevator_pitch": "test"},
+        transcript="some text",
+        instructions="   ",  # whitespace only
+        current_deck_spec=None,
+    )
+    assert "INSTRUCTIONS" not in prompt2

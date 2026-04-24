@@ -507,6 +507,125 @@ def _fmt_recap_items(value) -> list[str]:
     return [s for s in result if s]
 
 
+_SKIP_RECAP_KEYS = {"schema_version", "transcript_stats"}
+_V3_STRUCTURED_KEYS = {
+    "positioning", "value_proposition",
+    "positioning_statement", "scope_boundaries_non_goals",
+}
+_POSITIONING_LABELS = {
+    "what_to_sell": "What to sell?",
+    "why_now": "Why now?",
+    "why_well_positioned": "Why are we well positioned?",
+    "to_whom": "To whom?",
+}
+_VP_LABELS = {
+    "what_we_do": "What do we do?",
+    "how_we_do_it": "How do we do it?",
+    "how_we_get_paid": "How do we get paid?",
+}
+
+
+def _format_recap(recap: dict) -> str:
+    """Convert a recap dict to human-readable structured text for LLM prompts."""
+    lines = []
+
+    positioning = recap.get("positioning")
+    if positioning:
+        lines.append("=== POSITIONING ===")
+        for key, label in _POSITIONING_LABELS.items():
+            val = positioning.get(key)
+            if val:
+                items_str = "; ".join(str(v) for v in val) if isinstance(val, list) else str(val)
+                lines.append(f"  {label:<38} → {items_str}")
+        lines.append("")
+
+    value_prop = recap.get("value_proposition")
+    if value_prop:
+        lines.append("=== VALUE PROPOSITION ===")
+        for key, label in _VP_LABELS.items():
+            val = value_prop.get(key)
+            if val:
+                items_str = "; ".join(str(v) for v in val) if isinstance(val, list) else str(val)
+                lines.append(f"  {label:<38} → {items_str}")
+        lines.append("")
+
+    pos_stmt = recap.get("positioning_statement")
+    if pos_stmt:
+        lines.append("=== POSITIONING STATEMENT ===")
+        lines.append(f'"{pos_stmt}"')
+        lines.append("")
+
+    scope = recap.get("scope_boundaries_non_goals")
+    if scope:
+        lines.append("=== SCOPE / BOUNDARIES / NON-GOALS ===")
+        items = scope if isinstance(scope, list) else [scope]
+        for item in items:
+            lines.append(f"  - {item}")
+        lines.append("")
+
+    # Unknown / V2-style keys
+    _known = _SKIP_RECAP_KEYS | _V3_STRUCTURED_KEYS
+    for key, val in recap.items():
+        if key in _known or not val:
+            continue
+        label = key.replace("_", " ").upper()
+        lines.append(f"=== {label} ===")
+        if isinstance(val, list):
+            for item in val:
+                if isinstance(item, dict):
+                    topics = item.get("topics", "")
+                    if isinstance(topics, list):
+                        topics = " ↔ ".join(topics)
+                    insight = item.get("insight", "")
+                    line = f"{topics} : {insight}" if topics and insight else (topics or insight or str(item))
+                    lines.append(f"  - {line}")
+                else:
+                    lines.append(f"  - {item}")
+        elif isinstance(val, dict):
+            lines.append(f"  {json.dumps(val, ensure_ascii=False)}")
+        else:
+            lines.append(f"  {val}")
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+
+def _build_user_prompt(
+    recap: dict,
+    transcript: str,
+    instructions: str | None,
+    current_deck_spec: dict | None,
+    session_topic: str = "",
+    session_date: str = "",
+    reminder: str = "",
+) -> str:
+    """Build the LLM user prompt for deck_spec generation."""
+    parts = []
+    if instructions and instructions.strip():
+        parts.append(
+            "INSTRUCTIONS (s'appliquent à TOUTES les slides — "
+            "titres, contenus, langue, ton) :\n" + instructions.strip()
+        )
+    if session_topic or session_date:
+        ctx = []
+        if session_topic:
+            ctx.append(f"Sujet : {session_topic}")
+        if session_date:
+            ctx.append(f"Date : {session_date}")
+        parts.append("CONTEXTE :\n" + "\n".join(ctx))
+    parts.append("RÉCAP :\n" + _format_recap(recap))
+    parts.append("TRANSCRIPT (extrait) :\n" + transcript)
+    if current_deck_spec:
+        parts.append(
+            "DECK ACTUEL :\n"
+            + json.dumps(current_deck_spec, ensure_ascii=False, indent=2)
+        )
+    if reminder:
+        parts.append(reminder)
+    parts.append("Génère le deck_spec JSON complet.")
+    return "\n\n".join(parts)
+
+
 _CARDS_HEADING_MARKER = "Lorem ipsum dolor"
 _CARDS_CONTENT_MARKER = "Aenean vulputate"
 
