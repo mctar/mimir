@@ -131,4 +131,9 @@ Rules:
 - evolution: How ideas developed across the timeline of sessions. Empty array if nothing evolved.
 - tensions: Where sessions disagreed or complicated each other. Often empty — that's fine.
 - synthesis: A narrative, not a list. This is the "big picture" view of the day.
-- Prefer empty arrays over speculation. Never invent connections."""
+- Prefer empty arrays over speculation. Never invent connections.
+- Quality standard for insights and tensions:
+  Each cross_connections.insight must name a consequence or decision implication —
+  not merely observe a connection ("Session 2 referenced Session 1's framing" is not an insight).
+  Each tensions item must name what was contradicted and what the contradiction implies for strategy.
+  If an insight or tension cannot meet this standard, omit it. Prefer empty arrays."""
