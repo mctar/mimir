@@ -24,8 +24,8 @@ getUserMedia → Web Audio API
                                       circuit breaker + semaphore (max 3 req parallèles)
                                     → transcript to LLM proxy (fallback chain)
                                       • Ollama localhost:11434 (gemma4:26b/31b)
+                                      • Claude API (claude-opus-4.6, fallback)
                                       • Gemini API (gemini-2.5-flash)
-                                      • Claude API (claude-sonnet-4, fallback)
                                     → reconciler (scoring, decay, budget)
                                     → graph update via WebSocket ──→  Browser (Main View)
                                     → SQLite persistence (sessions, segments,
