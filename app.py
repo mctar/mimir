@@ -22,6 +22,7 @@ import corpus as corpus_module
 from prompts.graph import mindmap_system, SMALL_MODEL_GRAPH_PREFIX
 from prompts.recap import BOARD_RECAP_SYSTEM, cross_session_system
 from prompts.slides import SLIDES_INJECT
+from prompts.utils import transcript_cleaner_system, qa_assistant_system
 
 # ─── Load .env ───
 _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -847,13 +848,7 @@ async def session_qa(session_id: str, request: Request):
                 corpus_text = corpus_text[:300_000]
                 logger.warning("Q&A: corpus tronqué à 300 000 chars")
 
-    system = (
-        "Tu es un assistant d'analyse de session. "
-        "Réponds de façon concise aux questions basées sur le transcript"
-        + (" et les documents de référence fournis." if corpus_text else " fourni.")
-        + " Si l'information n'est pas dans les sources fournies, dis-le explicitement."
-        " Utilise la même langue que le transcript (FR ou EN)."
-    )
+    system = qa_assistant_system(bool(corpus_text))
     messages: list[dict] = [
         {"role": "user", "content": f"Voici le transcript de la session :\n\n{transcript}"},
         {"role": "assistant", "content": "Compris, je vais répondre à vos questions sur ce transcript."},
@@ -1268,20 +1263,7 @@ async def _clean_transcript_impl(session_id: str, segments: list[dict]) -> dict:
     for seg in segments:
         seg["text"] = pre_clean(seg["text"])
 
-    system_prompt = f"""You are a transcript cleaner. You receive raw speech-to-text segments and fix obvious transcription errors.
-
-Rules:
-- Fix misspelled words, garbled text, and wrong language fragments
-- Add missing punctuation and capitalization
-- Fix obvious name misspellings (be consistent across segments)
-- Preserve the speaker's original words — do NOT rephrase, summarize, or paraphrase
-- If a segment contains "[inaudible]", keep that marker as-is
-- If a segment is mostly noise or completely unintelligible, replace it with "[inaudible]"
-- If a segment is fine, return it unchanged
-- The transcript is in {lang_name}. Some segments may contain English terms or code-switching — preserve those naturally
-- Return EXACTLY the same number of items as the input, in the same order
-- Return ONLY a JSON array of strings, one per segment: ["cleaned segment 1", "cleaned segment 2", ...]
-- Do NOT add any explanation, just the JSON array"""
+    system_prompt = transcript_cleaner_system(lang_name)
 
     # Process in chunks. We use gemma4:26b (proven ~15-30s per call under live
     # load) rather than 31b, and cap concurrency so we don't queue requests
