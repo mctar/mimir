@@ -39,8 +39,9 @@ RULES:
 - For sub-theme slides (what_to_sell, why_now, why_well_positioned, to_whom,
   what_we_do, how_we_do_it, how_we_get_paid), use the recap bullet items directly
   as the slide content. These are validated insights from the session — do not
-  invent alternatives. The HEADLINE STANDARD applies to the slide title only,
-  not to recap-sourced bullets.
+  invent or substitute alternatives. Recap-sourced bullets are accepted as-is;
+  do not cut them for being descriptive (the HEADLINE STANDARD applies to slide
+  titles only). If a bullet exceeds 20 words, truncate it — do not rephrase.
 - If a CURRENT DECK is provided, apply INSTRUCTIONS by modifying it — do not rebuild from scratch
   unless explicitly asked.
 - Max 15 slides. If content exceeds this, prioritize and condense.
