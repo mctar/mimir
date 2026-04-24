@@ -10,9 +10,11 @@ RULES (non-negotiable):
 - The deck must be fully self-contained: no external URLs, no CDN links.
 - Navigation: left/right arrow keys and space bar advance slides.
 - Use CSS transitions between slides (fade or horizontal slide).
-- Style: dark, modern, bold. Background: #0a0a0f. Accent: #0058AB.
+- Style: dark, modern, bold. Background: #0C1A2E. Accent: #0058AB.
 - Typography: system fonts only (-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif).
 - Large text, high contrast, minimal clutter — legible from the back of a room.
+- Slide headlines must be declarative assertions: state a conclusion, not a topic.
+  ❌ "Positioning the Organization" → ✅ "The orchestrator role is the primary moat"
 - Slide structure: title, overview/pitch, key points (1 per slide), concepts map,
   non-obvious connections, tensions, conclusion.
 """
