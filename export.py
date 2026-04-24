@@ -822,18 +822,132 @@ RÈGLES :
 """
 
 
+def _bullets_to_card(bullets: list) -> str:
+    """Join a list of bullet strings into a card content string."""
+    if not bullets:
+        return "—"
+    return "\n".join(bullets)
+
+
+def _build_v3_fixed_slides(recap: dict, session_topic: str, session_date: str) -> list:
+    """Build the 5 mandatory framework slides from a V3 recap dict."""
+    return [
+        {
+            "layout": "cover",
+            "slots": {
+                "title": session_topic,
+                "date": session_date,
+                "duration": f"{int(recap.get('transcript_stats', {}).get('duration_minutes', 0))} min",
+            },
+        },
+        {
+            "layout": "cards-4",
+            "slots": {
+                "title": "Positioning",
+                "cards": [
+                    {"heading": "What do we sell?", "content": _bullets_to_card(recap.get("positioning", {}).get("what_to_sell", []))},
+                    {"heading": "Why now?", "content": _bullets_to_card(recap.get("positioning", {}).get("why_now", []))},
+                    {"heading": "Why are we well positioned?", "content": _bullets_to_card(recap.get("positioning", {}).get("why_well_positioned", []))},
+                    {"heading": "To whom?", "content": _bullets_to_card(recap.get("positioning", {}).get("to_whom", []))},
+                ],
+            },
+        },
+        {
+            "layout": "cards-3",
+            "slots": {
+                "title": "Value Proposition",
+                "cards": [
+                    {"heading": "What do we do?", "content": _bullets_to_card(recap.get("value_proposition", {}).get("what_we_do", []))},
+                    {"heading": "How do we do it?", "content": _bullets_to_card(recap.get("value_proposition", {}).get("how_we_do_it", []))},
+                    {"heading": "How do we get paid?", "content": _bullets_to_card(recap.get("value_proposition", {}).get("how_we_get_paid", []))},
+                ],
+            },
+        },
+        {
+            "layout": "quote-large",
+            "slots": {
+                "title": "Positioning Statement",
+                "body": recap.get("positioning_statement", ""),
+            },
+        },
+        {
+            "layout": "bullets",
+            "slots": {
+                "title": "Scope / Boundaries / Non-Goals",
+                "bullets": recap.get("scope_boundaries_non_goals", [])[:6],
+            },
+        },
+    ]
+
+
 async def generate_deck_spec(
     transcript: str,
     recap: dict,
     instructions: str | None,
     current_deck_spec: dict | None,
     chain: list[dict],
+    session_topic: str = "Intelligent Operations – Day 1",
+    session_date: str = "",
 ) -> dict:
     """Call LLM to generate or update a deck_spec from transcript + recap + instructions.
 
     Returns the deck_spec dict. Retries once on invalid JSON.
     Raises RuntimeError if all tiers fail.
     """
+    # ── V3 schema: hybrid fixed + optional LLM slide ──────────────────────
+    if recap.get("schema_version") == 3:
+        fixed_slides = _build_v3_fixed_slides(recap, session_topic, session_date)
+
+        # Truncate transcript for the optional LLM call
+        max_transcript = 8000
+        t = transcript
+        if len(t) > max_transcript:
+            t = "[...]\n" + t[-max_transcript:]
+
+        v3_user_prompt = (
+            f"TRANSCRIPT:\n{t}\n\n"
+            f"RECAP:\n{json.dumps(recap, ensure_ascii=False, indent=2)}\n\n"
+            f"MANDATORY SLIDES (already defined, do NOT modify):\n"
+            f"{json.dumps({'schema_version': 1, 'slides': fixed_slides}, ensure_ascii=False, indent=2)}\n\n"
+            + (f"INSTRUCTIONS:\n{instructions.strip()}\n\n" if instructions and instructions.strip() else "")
+            + "You MAY append 0 or 1 executive summary slide with a layout of your choice from the catalog. "
+            "Do NOT add slides about non-obvious connections, tensions, or graph-based insights. "
+            "If the mandatory slides already cover the content well, return an empty slides array. "
+            "Output JSON: {\"schema_version\": 1, \"slides\": []} — only the optional slides you want to add, NOT the mandatory ones."
+        )
+
+        for attempt in range(2):
+            reminder = "" if attempt == 0 else "RAPPEL : output JSON uniquement, aucun texte, aucune fence markdown."
+            prompt = v3_user_prompt + ("\n\n" + reminder if reminder else "")
+            for tier in chain:
+                provider, model = tier["provider"], tier["model"]
+                try:
+                    raw = await _llm_call_slides(tier, _DECK_SPEC_SYSTEM, prompt)
+                    raw = raw.strip()
+                    if raw.startswith("```"):
+                        raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
+                        raw = re.sub(r"\n?```$", "", raw)
+                        raw = raw.strip()
+                    extra = json.loads(raw)
+                    extra_slides = extra.get("slides", [])
+                    # Cap: 5 fixed + at most 1 optional = 6 total
+                    if extra_slides:
+                        fixed_slides.append(extra_slides[0])
+                    break
+                except json.JSONDecodeError as e:
+                    logger.warning(f"generate_deck_spec V3 attempt {attempt+1}: JSON parse error — {e}")
+                    break  # retry with reminder
+                except Exception as e:
+                    logger.warning(f"generate_deck_spec V3 tier {provider}/{model} failed: {e}")
+                    continue  # try next tier
+            else:
+                # All tiers failed this attempt — continue to retry loop
+                continue
+            break  # Successfully parsed — exit retry loop
+
+        return {"schema_version": 1, "slides": fixed_slides}
+    # ── end V3 ────────────────────────────────────────────────────────────
+
     # Truncate transcript — keep tail (most recent content is most relevant)
     max_transcript = 8000
     if len(transcript) > max_transcript:
@@ -921,6 +1035,12 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
           f"transcript={len(transcript)} chars instructions={'yes' if instructions else 'no'} "
           f"deck_spec={'update' if current_deck_spec else 'new'}")
 
+    from datetime import datetime as _datetime
+    try:
+        session_date = _datetime.fromtimestamp(float(session.get("created_at", 0))).strftime("%d %B %Y")
+    except Exception:
+        session_date = ""
+
     # Generate deck_spec via LLM
     deck_spec = await generate_deck_spec(
         transcript=transcript,
@@ -928,6 +1048,8 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
         instructions=instructions,
         current_deck_spec=current_deck_spec,
         chain=chain,
+        session_topic=topic,
+        session_date=session_date,
     )
 
     # Persist deck_spec
