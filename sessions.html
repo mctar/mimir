@@ -163,6 +163,7 @@ h1 {
 .badge-none { border-color: var(--bdr); color: var(--dim); }
 .badge-active { border-color: var(--amber); color: var(--amber); }
 .badge-replay { border-color: var(--cyan, #5af); color: var(--cyan, #5af); }
+.badge-external { border-color: var(--purple); color: var(--purple); }
 .empty-state {
   text-align: center;
   padding: 80px 20px;
@@ -1580,6 +1581,7 @@ function renderList() {
   tbody.innerHTML = sessions.map(s => {
     const topic = s.topic || 'Untitled';
     const replayBadge = s.source === 'replay' ? ' <span class="badge badge-replay">replay</span>' : '';
+    const externalBadge = s.source === 'external' ? ' <span class="badge badge-external">external</span>' : '';
     const date = fmtDate(s.created_at);
     const dur = s.ended_at ? fmtDuration(s.ended_at - s.created_at) : '<span class="badge badge-active">active</span>';
     const segs = s.segment_count || 0;
@@ -1587,7 +1589,7 @@ function renderList() {
     const checked = selectedSessions.has(s.id) ? 'checked' : '';
     return `<tr class="clickable">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="sel-cb" data-id="${s.id}" data-has-recap="${s.has_recap ? 1 : 0}" ${checked} onchange="onSessionSelect()"></td>
-      <td class="session-topic" onclick="openSession('${s.id}')">${esc(topic)}${replayBadge}</td>
+      <td class="session-topic" onclick="openSession('${s.id}')">${esc(topic)}${replayBadge}${externalBadge}</td>
       <td class="session-date" onclick="openSession('${s.id}')">${date}</td>
       <td onclick="openSession('${s.id}')">${dur}</td>
       <td onclick="openSession('${s.id}')">${segs}</td>
