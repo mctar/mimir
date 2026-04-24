@@ -24,6 +24,13 @@ _active_stt = {
 }
 _active_stt_lock = threading.Lock()
 
+# ─── Fallback / circuit breaker state ───
+_stt_fallback_url = ""          # Set via configure_stt_fallback(); empty = no fallback
+_stt_failure_count = 0          # Consecutive primary failures
+_STT_FAILOVER_THRESHOLD = 3     # Failures before switching to fallback
+_stt_using_fallback = False     # Whether currently routing to fallback
+_stt_fallback_lock = threading.Lock()
+
 # Rolling context for Whisper prompt conditioning (last N chars of transcript)
 _transcript_context = {"text": ""}
 _transcript_context_lock = threading.Lock()
@@ -94,6 +101,7 @@ def _is_duplicate(text: str) -> bool:
 
 def configure_stt(backend: str, remote_url: str = "", language: str = ""):
     """Set the active STT backend. Called from app.py."""
+    global _stt_failure_count, _stt_using_fallback
     with _active_stt_lock:
         _active_stt["backend"] = backend
         if remote_url:
@@ -105,12 +113,28 @@ def configure_stt(backend: str, remote_url: str = "", language: str = ""):
                 _active_stt["canary_url"] = remote_url
         if language is not None:
             _active_stt["language"] = language
+    # Reset fallback state when backend is explicitly reconfigured
+    with _stt_fallback_lock:
+        _stt_failure_count = 0
+        _stt_using_fallback = False
+
+
+def configure_stt_fallback(url: str):
+    """Set the fallback STT URL (e.g. local whisper_server). Called from app.py."""
+    global _stt_fallback_url
+    with _stt_fallback_lock:
+        _stt_fallback_url = url
+    logger.info(f"STT fallback configured: {url}")
 
 
 def get_stt_config() -> dict:
-    """Return current STT config. Called from app.py."""
+    """Return current STT config including fallback state. Called from app.py."""
     with _active_stt_lock:
-        return {**_active_stt}
+        cfg = {**_active_stt}
+    with _stt_fallback_lock:
+        cfg["fallback_url"] = _stt_fallback_url
+        cfg["using_fallback"] = _stt_using_fallback
+    return cfg
 
 
 def reset_state():
@@ -173,8 +197,7 @@ def _transcribe_backend(audio_arr: np.ndarray, metrics: dict, metrics_lock,
     dt = time.time() - t0
 
     if resp.status_code != 200:
-        logger.error(f"{label} STT error: {resp.status_code} {resp.text[:200]}")
-        return {"text": "", "language": "", "latency_ms": int(dt * 1000)}
+        raise RuntimeError(f"{label} STT HTTP {resp.status_code}: {resp.text[:200]}")
 
     data = resp.json()
     raw_text = data.get("text", "").strip()
@@ -227,16 +250,50 @@ def transcribe_audio_chunk(
 
     t_e2e = time.time()
 
-    result = _transcribe_backend(audio_16k, metrics, metrics_lock, url, label)
-    raw_text = result["text"]
+    # 2b. Determine effective URL (primary or fallback)
+    global _stt_failure_count, _stt_using_fallback
+    with _stt_fallback_lock:
+        using_fallback = _stt_using_fallback
+        fallback_url = _stt_fallback_url
 
+    effective_url = fallback_url if (using_fallback and fallback_url) else url
+    effective_label = f"{label}[fallback]" if (using_fallback and fallback_url) else label
+
+    try:
+        result = _transcribe_backend(audio_16k, metrics, metrics_lock, effective_url, effective_label)
+        if not using_fallback:
+            with _stt_fallback_lock:
+                _stt_failure_count = 0
+    except Exception as e:
+        logger.warning(f"STT primary failed: {e}")
+        if fallback_url and not using_fallback:
+            with _stt_fallback_lock:
+                _stt_failure_count += 1
+                if _stt_failure_count >= _STT_FAILOVER_THRESHOLD:
+                    _stt_using_fallback = True
+                    logger.warning(f"STT: {_stt_failure_count} consecutive failures — switching to fallback {fallback_url}")
+            try:
+                result = _transcribe_backend(audio_16k, metrics, metrics_lock, fallback_url, f"{label}[fallback]")
+            except Exception as e2:
+                logger.error(f"STT fallback also failed: {e2}")
+                return None
+        else:
+            with _stt_fallback_lock:
+                _stt_failure_count += 1
+            return None
+
+    raw_text = result["text"]
     e2e = time.time() - t_e2e
 
     # 3. Filter hallucinations, dedup
     text = _clean_whisper_output(raw_text)
     if not text:
+        with metrics_lock:
+            metrics["chunks_filtered_hallucination"] = metrics.get("chunks_filtered_hallucination", 0) + 1
         return None
     if _is_duplicate(text):
+        with metrics_lock:
+            metrics["chunks_filtered_dedup"] = metrics.get("chunks_filtered_dedup", 0) + 1
         return None
 
     # 4. Update rolling context
@@ -252,6 +309,8 @@ def transcribe_audio_chunk(
         metrics["stt_e2e_last"] = e2e
         metrics["stt_e2e_total"] = metrics.get("stt_e2e_total", 0) + e2e
         metrics["stt_e2e_avg"] = metrics["stt_e2e_total"] / cp if cp else 0
+        with _stt_fallback_lock:
+            metrics["stt_active_backend"] = "fallback" if _stt_using_fallback else "primary"
 
     return {
         "text": text,

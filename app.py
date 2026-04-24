@@ -16,7 +16,7 @@ import aiohttp
 from log import logger
 import db
 import stt_worker
-from stt_worker import configure_stt, get_stt_config
+from stt_worker import configure_stt, configure_stt_fallback, get_stt_config
 from reconciler import GraphReconciler
 import corpus as corpus_module
 
@@ -46,6 +46,7 @@ GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 
 # ─── Remote STT ───
 STT_SERVER_URL = os.environ.get("STT_SERVER_URL", "https://stt.btrbot.com")
+STT_FALLBACK_URL = os.environ.get("STT_FALLBACK_URL", "")
 
 # LLM fallback chain — ordered list of tiers, tried in order.
 # First tier is primary; each subsequent tier is a fallback.
@@ -478,7 +479,11 @@ async def lifespan(app: FastAPI):
     await db.init_db()
     # Default STT backend
     configure_stt("remote", remote_url=STT_SERVER_URL)
-    logger.info(f"STT: faster-whisper ({STT_SERVER_URL})")
+    if STT_FALLBACK_URL:
+        configure_stt_fallback(STT_FALLBACK_URL)
+        logger.info(f"STT: {STT_SERVER_URL} (fallback: {STT_FALLBACK_URL})")
+    else:
+        logger.info(f"STT: faster-whisper ({STT_SERVER_URL})")
 
     async def _ws_broadcast(message: str):
         """Broadcast a text message to all connected WebSocket clients."""
