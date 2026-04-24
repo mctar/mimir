@@ -55,6 +55,7 @@ Headlines must be declarative assertions, not gerundive descriptions.
   ✅ ACCEPT: "The Transform-then-Run model is the primary competitive moat"
 Bullet content must name a decision, implication, risk, or recommended action.
 Bullets that merely describe a topic (without naming what changes or what is at stake) must be cut.
+Exception: bullets drawn directly from recap sub-theme fields are kept as-is (see RULES above).
 
 OUTPUT LANGUAGE: Default to English.
 Only use another language if the session language field explicitly specifies it (e.g. "fr" → French).
