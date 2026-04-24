@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 import uvicorn
 from faster_whisper import WhisperModel
 from log import logger
+from prompts.utils import WHISPER_DEFAULT_PROMPT
 
 MODEL_SIZE = os.environ.get("WHISPER_MODEL_SIZE", "small")
 DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
@@ -29,14 +30,6 @@ COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
 # Default language when the client sends "" or "auto".
 # Set to "" to keep auto-detection.
 DEFAULT_LANGUAGE = "fr"
-
-# Domain-specific prompt injected when the client sends no initial_prompt.
-# Helps Whisper handle technical vocabulary and proper nouns correctly.
-DEFAULT_PROMPT = (
-    "Discussion en français sur l'intelligence artificielle, "
-    "les modèles de langage, la transcription vocale, les graphes de connaissances, "
-    "Mímir, Whisper, Anthropic, Azure, Ollama, FastAPI."
-)
 
 logger.info(f"Loading Whisper model '{MODEL_SIZE}' on {DEVICE} ({COMPUTE_TYPE})...")
 model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
@@ -58,7 +51,7 @@ async def transcribe(
 
     audio = np.frombuffer(raw, dtype=np.float32).copy()
     lang = language if language and language != "auto" else DEFAULT_LANGUAGE
-    prompt = initial_prompt or DEFAULT_PROMPT
+    prompt = initial_prompt or WHISPER_DEFAULT_PROMPT
 
     t0 = time.time()
 
