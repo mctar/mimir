@@ -36,7 +36,7 @@ ANTHROPIC_AUTH_TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
 ANTHROPIC_SONNET_MODEL = os.environ.get("ANTHROPIC_DEFAULT_SONNET_MODEL", "claude-opus-4-6")
 
 # ─── Hugin (self-hosted Ollama) ───
-HUGIN_BASE_URL = os.environ.get("HUGIN_BASE_URL", "https://munin.btrbot.com")
+HUGIN_BASE_URL = os.environ.get("HUGIN_BASE_URL")
 HUGIN_CF_ID = os.environ.get("HUGIN_CF_ID", "")
 HUGIN_CF_SECRET = os.environ.get("HUGIN_CF_SECRET", "")
 
@@ -837,6 +837,10 @@ async def session_qa(session_id: str, request: Request):
     corpus_ids = [int(i) for i in body.get("corpus_ids", []) if str(i).isdigit()]
     if not question:
         return JSONResponse({"error": "No question"}, status_code=400)
+
+    with _llm_chain_lock:
+        chain_preview = [(t["provider"], t["model"]) for t in _llm_chain]
+    logger.info(f"[qa] session={session_id} corpus_ids={corpus_ids} stream={body.get('stream')} chain={chain_preview}")
 
     session_meta = await db.get_session(session_id)
     if session_meta is None:
