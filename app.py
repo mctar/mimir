@@ -2052,31 +2052,25 @@ def _extract_graph_json(raw_text: str) -> dict:
     import re
     cleaned = raw_text.replace("```json", "").replace("```", "")
 
-    # Strategy 1: find {"nodes" and parse from there (handles thinking preamble)
-    for pattern in [r'\{\s*"nodes"\s*:', r"\{\s*'nodes'\s*:"]:
-        match = re.search(pattern, cleaned)
-        if match:
-            start = match.start()
-            # Find matching closing brace by counting depth
-            depth = 0
-            for i in range(start, len(cleaned)):
-                if cleaned[i] == '{':
-                    depth += 1
-                elif cleaned[i] == '}':
-                    depth -= 1
-                    if depth == 0:
-                        try:
-                            return json.loads(cleaned[start:i + 1])
-                        except json.JSONDecodeError:
-                            break  # try next strategy
-
-    # Strategy 2: try the whole thing stripped
+    # Strategy 1: try the whole cleaned text first (fastest, most reliable)
     stripped = cleaned.strip()
     if stripped.startswith("{"):
         try:
             return json.loads(stripped)
         except json.JSONDecodeError:
             pass
+
+    # Strategy 2: find {"nodes" start and parse from there (handles thinking preamble).
+    # Uses json.JSONDecoder.raw_decode to avoid brace-counting bugs with braces in strings.
+    decoder = json.JSONDecoder()
+    for pattern in [r'\{\s*"nodes"\s*:', r"\{\s*'nodes'\s*:"]:
+        match = re.search(pattern, cleaned)
+        if match:
+            try:
+                obj, _ = decoder.raw_decode(cleaned, match.start())
+                return obj
+            except json.JSONDecodeError:
+                pass
 
     # Strategy 3: first { to last }
     start = cleaned.find("{")
