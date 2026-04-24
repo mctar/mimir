@@ -308,3 +308,215 @@ def test_generate_deck_spec_strips_markdown_fence():
 
     assert result["slides"][0]["layout"] == "bullets"
     assert result["slides"][0]["slots"]["title"] == "Fenced"
+
+
+def test_assemble_pptx_cards3(tmp_path):
+    """cards-3 génère une slide avec titre + 3 paires heading/content."""
+    import export as exp
+    from pptx import Presentation
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {
+                "layout": "cards-3",
+                "slots": {
+                    "title": "Trois catégories",
+                    "cards": [
+                        {"heading": "Cat A", "content": "Contenu de A"},
+                        {"heading": "Cat B", "content": "Contenu de B"},
+                        {"heading": "Cat C", "content": "Contenu de C"},
+                    ],
+                },
+            }
+        ],
+    }
+    output = str(tmp_path / "cards3.pptx")
+    exp._assemble_pptx(deck_spec, output)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 1000
+    prs = Presentation(output)
+    all_text = " ".join(
+        shape.text_frame.text
+        for slide in prs.slides
+        for shape in slide.shapes
+        if shape.has_text_frame
+    )
+    assert "Cat A" in all_text
+    assert "Contenu de B" in all_text
+    assert "Cat C" in all_text
+
+
+def test_assemble_pptx_cards4(tmp_path):
+    """cards-4 génère une slide avec titre + 4 paires heading/content."""
+    import export as exp
+    from pptx import Presentation
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {
+                "layout": "cards-4",
+                "slots": {
+                    "title": "Quatre thèmes",
+                    "cards": [
+                        {"heading": "Thème 1", "content": "Desc 1"},
+                        {"heading": "Thème 2", "content": "Desc 2"},
+                        {"heading": "Thème 3", "content": "Desc 3"},
+                        {"heading": "Thème 4", "content": "Desc 4"},
+                    ],
+                },
+            }
+        ],
+    }
+    output = str(tmp_path / "cards4.pptx")
+    exp._assemble_pptx(deck_spec, output)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 1000
+    prs = Presentation(output)
+    all_text = " ".join(
+        shape.text_frame.text
+        for slide in prs.slides
+        for shape in slide.shapes
+        if shape.has_text_frame
+    )
+    assert "Thème 2" in all_text
+    assert "Desc 4" in all_text
+
+
+def test_assemble_pptx_cards5(tmp_path):
+    """cards-5 génère une slide avec titre + 5 paires heading/content."""
+    import export as exp
+    from pptx import Presentation
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {
+                "layout": "cards-5",
+                "slots": {
+                    "title": "Cinq acteurs",
+                    "cards": [
+                        {"heading": "Acteur 1", "content": "Rôle 1"},
+                        {"heading": "Acteur 2", "content": "Rôle 2"},
+                        {"heading": "Acteur 3", "content": "Rôle 3"},
+                        {"heading": "Acteur 4", "content": "Rôle 4"},
+                        {"heading": "Acteur 5", "content": "Rôle 5"},
+                    ],
+                },
+            }
+        ],
+    }
+    output = str(tmp_path / "cards5.pptx")
+    exp._assemble_pptx(deck_spec, output)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 1000
+    prs = Presentation(output)
+    all_text = " ".join(
+        shape.text_frame.text
+        for slide in prs.slides
+        for shape in slide.shapes
+        if shape.has_text_frame
+    )
+    assert "Acteur 3" in all_text
+    assert "Rôle 5" in all_text
+
+
+def test_assemble_pptx_cards4_rounded(tmp_path):
+    """cards-4-rounded génère une slide avec 4 paires heading/content (variante arrondie)."""
+    import export as exp
+    from pptx import Presentation
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {
+                "layout": "cards-4-rounded",
+                "slots": {
+                    "title": "Quatre étapes",
+                    "cards": [
+                        {"heading": "Étape 1", "content": "Description étape 1"},
+                        {"heading": "Étape 2", "content": "Description étape 2"},
+                        {"heading": "Étape 3", "content": "Description étape 3"},
+                        {"heading": "Étape 4", "content": "Description étape 4"},
+                    ],
+                },
+            }
+        ],
+    }
+    output = str(tmp_path / "cards4r.pptx")
+    exp._assemble_pptx(deck_spec, output)
+    assert os.path.exists(output)
+    assert os.path.getsize(output) > 1000
+    prs = Presentation(output)
+    all_text = " ".join(
+        shape.text_frame.text
+        for slide in prs.slides
+        for shape in slide.shapes
+        if shape.has_text_frame
+    )
+    assert "Étape 2" in all_text
+    assert "Description étape 4" in all_text
+
+
+def test_cards_no_shared_tags(tmp_path):
+    """No tag file should be referenced by more than one slide (shared tags corrupt PPTX)."""
+    import zipfile
+    from collections import defaultdict
+    from xml.etree import ElementTree as ET
+    import export as exp
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {"layout": "cards-3", "slots": {"title": "T1", "cards": [
+                {"heading": "A", "content": "a"},
+                {"heading": "B", "content": "b"},
+                {"heading": "C", "content": "c"},
+            ]}},
+            {"layout": "cards-4", "slots": {"title": "T2", "cards": [
+                {"heading": "A", "content": "a"},
+                {"heading": "B", "content": "b"},
+                {"heading": "C", "content": "c"},
+                {"heading": "D", "content": "d"},
+            ]}},
+        ],
+    }
+    output = str(tmp_path / "no_shared_tags.pptx")
+    exp._assemble_pptx(deck_spec, output)
+
+    TAGS_RELTYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/tags"
+    NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+    tag_owners = defaultdict(list)
+    with zipfile.ZipFile(output) as z:
+        for name in z.namelist():
+            if "slides/_rels/" in name:
+                tree = ET.fromstring(z.read(name))
+                for rel in tree.findall(f"{{{NS}}}Relationship"):
+                    if rel.get("Type") == TAGS_RELTYPE:
+                        tag_owners[rel.get("Target")].append(name)
+
+    for tag, owners in tag_owners.items():
+        assert len(owners) == 1, f"Tag {tag} shared by {len(owners)} slides: {owners}"
+
+
+def test_assemble_pptx_no_template_slides(tmp_path):
+    """Le PPTX généré ne doit contenir QUE les slides du deck_spec, pas les slides template."""
+    import export as exp
+    from pptx import Presentation
+
+    deck_spec = {
+        "schema_version": 1,
+        "slides": [
+            {"layout": "cover", "slots": {"title": "Mon titre", "date": "2026-04-24"}},
+            {"layout": "bullets", "slots": {"title": "Points clés", "bullets": ["Point A", "Point B"]}},
+        ],
+    }
+    output = str(tmp_path / "no_template.pptx")
+    exp._assemble_pptx(deck_spec, output)
+
+    prs = Presentation(output)
+    assert len(prs.slides) == 2, (
+        f"Expected 2 slides (one per deck_spec entry), got {len(prs.slides)}. "
+        "Template Lorem-ipsum slides are leaking into the output."
+    )
