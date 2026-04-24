@@ -44,4 +44,4 @@ def test_cross_session_empty_array_preference():
     """Empty array preference must be explicitly stated for insights and tensions."""
     prompt = cross_session_system("English", "en")
     assert "empty" in prompt.lower()
-    assert "omit" in prompt.lower() or "prefer" in prompt.lower()
+    assert "omit" in prompt.lower()
