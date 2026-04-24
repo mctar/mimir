@@ -635,3 +635,29 @@ def test_assemble_divider_layout(tmp_path):
     all_text = " ".join(sh.text_frame.text for sh in slide.shapes if sh.has_text_frame)
     assert "POSITIONING" in all_text
     assert "01" in all_text
+
+
+def test_build_user_prompt_session_context():
+    """CONTEXTE block appears when session_topic or session_date is provided."""
+    from export import _build_user_prompt
+
+    prompt = _build_user_prompt(
+        recap={"elevator_pitch": "test"},
+        transcript="some text",
+        instructions=None,
+        current_deck_spec=None,
+        session_topic="Intelligent Operations",
+        session_date="24 April 2026",
+    )
+    assert "CONTEXTE" in prompt
+    assert "Intelligent Operations" in prompt
+    assert "24 April 2026" in prompt
+
+    # No CONTEXTE block when both are empty
+    prompt2 = _build_user_prompt(
+        recap={"elevator_pitch": "test"},
+        transcript="some text",
+        instructions=None,
+        current_deck_spec=None,
+    )
+    assert "CONTEXTE" not in prompt2
