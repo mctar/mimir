@@ -173,8 +173,7 @@ def _transcribe_backend(audio_arr: np.ndarray, metrics: dict, metrics_lock,
     dt = time.time() - t0
 
     if resp.status_code != 200:
-        logger.error(f"{label} STT error: {resp.status_code} {resp.text[:200]}")
-        return {"text": "", "language": "", "latency_ms": int(dt * 1000)}
+        raise RuntimeError(f"{label} STT HTTP {resp.status_code}: {resp.text[:200]}")
 
     data = resp.json()
     raw_text = data.get("text", "").strip()
