@@ -19,6 +19,10 @@ import stt_worker
 from stt_worker import configure_stt, configure_stt_fallback, get_stt_config
 from reconciler import GraphReconciler
 import corpus as corpus_module
+from prompts.graph import mindmap_system, SMALL_MODEL_GRAPH_PREFIX
+from prompts.recap import BOARD_RECAP_SYSTEM, cross_session_system
+from prompts.slides import SLIDES_INJECT
+from prompts.utils import transcript_cleaner_system, qa_assistant_system
 
 # ─── Load .env ───
 _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -101,20 +105,6 @@ class _ActiveLLMView:
         with _llm_chain_lock:
             return iter(dict(_llm_chain[0]))
 _active_llm = _ActiveLLMView()
-
-# Extra system prompt for non-Claude models to improve graph quality
-_SMALL_MODEL_GRAPH_PREFIX = """CRITICAL: Output ONLY the raw JSON object. No thinking, no reasoning, no explanation, no markdown fences.
-
-GRAPH EVOLUTION (follow strictly):
-- You MUST add new nodes for every new concept, person, or topic in the NEW SEGMENT
-- Always evolve the graph — never return it unchanged. The conversation is progressing, the graph must too.
-- Every node MUST connect to at least 2 different nodes — no orphans
-- NEVER create a star/hub where all nodes link to one central node
-- Create cross-connections between related concepts, not just to the main topic
-- Vary relationship labels: "enables", "requires", "part of", "contrasts", "drives", "informs", "blocks"
-- Use "group" field (not "type") for node category
-
-"""
 
 # ─── Global state ───
 transcript_queue: queue.Queue = queue.Queue()
@@ -858,13 +848,7 @@ async def session_qa(session_id: str, request: Request):
                 corpus_text = corpus_text[:300_000]
                 logger.warning("Q&A: corpus tronqué à 300 000 chars")
 
-    system = (
-        "Tu es un assistant d'analyse de session. "
-        "Réponds de façon concise aux questions basées sur le transcript"
-        + (" et les documents de référence fournis." if corpus_text else " fourni.")
-        + " Si l'information n'est pas dans les sources fournies, dis-le explicitement."
-        " Utilise la même langue que le transcript (FR ou EN)."
-    )
+    system = qa_assistant_system(bool(corpus_text))
     messages: list[dict] = [
         {"role": "user", "content": f"Voici le transcript de la session :\n\n{transcript}"},
         {"role": "assistant", "content": "Compris, je vais répondre à vos questions sur ce transcript."},
@@ -1088,88 +1072,7 @@ async def generate_recap(session_id: str):
     if len(full_text) > max_chars:
         transcript_for_recap += f"\n\n[Transcript truncated at {max_chars} chars out of {len(full_text)}]"
 
-    system_prompt = """SYSTEM PROMPT – BOARD-LEVEL RECAP FOR SLIDE GENERATION
-
-You are acting as a senior strategy analyst supporting Capgemini Invent executive leadership.
-
-You analyze the transcript of a Capgemini Invent Board-level working session on "Intelligent Operations" and extract clear, structured, and decision-grade insights suitable for automatic slide generation.
-
-Your output must reflect a CXO-level mindset:
-- Sharp, concise, and assertive language
-- Fact-based, no fluff, no generic consulting phrasing
-- Explicit focus on value, positioning, differentiation, and monetization
-- Written natively in English, with precise and unambiguous wording
-
-ANALYTICAL FRAMEWORK – DAY 1 KEY DISCUSSION POINTS
-
-1. POSITIONING
-For each sub-question, extract only what is explicitly supported by the transcript.
-
-What do we sell?
-Hints: Transform and/or Run | Value game step-up | Asset / IP-led services | Front / Core / Back
-
-Why now?
-Hints: Market inflection point | Transformation renewal | IOPs market momentum | Agentic operations becoming reality
-
-Why are we well positioned?
-Hints: Tri-pod (Transformation × Industry × Technology) | Orchestrator & neutral partner role | Credibility and proof points
-
-To whom do we sell?
-Hints: CXO-level play | Customer tiers | Client archetypes vs. real buying behavior
-
-2. VALUE PROPOSITION
-
-What do we do?
-Hints: Value engine | End-to-end operational reinvention | Shift from static to dynamic services
-
-How do we do it?
-Hints: Evolution vs. disruption | Deal anatomy | Aggregation of capabilities
-
-How do we get paid?
-Hints: Value / risk / cash equation | Shared accountability models
-
-EXTRACTION & SYNTHESIS RULES (STRICT)
-- For each sub-question, identify transcript elements that directly address the associated hints
-- Synthesize into concise executive bullets
-- Maximum 1–2 sentences per bullet
-- Each bullet must express a single, clear idea
-- If a hint is not discussed, do not mention it
-- If relevant content does not map cleanly to a hint but clearly answers the sub-question, include it
-- If a full sub-question is not addressed at all, return an empty list
-- Do not invent, infer, extrapolate, or speculate beyond what is explicitly stated in the transcript
-
-ADDITIONAL REQUIRED OUTPUTS
-In addition to the structured analysis, generate:
-
-1. POSITIONING STATEMENT
-- One single, sharp sentence
-- Synthesizing the four Positioning sub-questions
-- Suitable to be used as a slide headline
-
-2. SCOPE / BOUNDARIES / NON-GOALS
-- Explicit list derived from the Value Proposition section
-- Clarifies what Intelligent Operations is not, will not cover, or is deliberately out of scope
-- Written in an executive, unambiguous tone
-
-✅ The final output must be directly consumable by a slide-generation engine
-✅ Priority: clarity, sharpness, and executive relevance over verbosity
-
-Return ONLY valid JSON with this exact structure:
-{
-  "positioning": {
-    "what_to_sell": [],
-    "why_now": [],
-    "why_well_positioned": [],
-    "to_whom": []
-  },
-  "value_proposition": {
-    "what_we_do": [],
-    "how_we_do_it": [],
-    "how_we_get_paid": []
-  },
-  "positioning_statement": "",
-  "scope_boundaries_non_goals": []
-}"""
+    system_prompt = BOARD_RECAP_SYSTEM
 
     user_prompt = f"SESSION TRANSCRIPT:\n\n{transcript_for_recap}\n\nGenerate the structured DAY 1 recap."
 
@@ -1360,20 +1263,7 @@ async def _clean_transcript_impl(session_id: str, segments: list[dict]) -> dict:
     for seg in segments:
         seg["text"] = pre_clean(seg["text"])
 
-    system_prompt = f"""You are a transcript cleaner. You receive raw speech-to-text segments and fix obvious transcription errors.
-
-Rules:
-- Fix misspelled words, garbled text, and wrong language fragments
-- Add missing punctuation and capitalization
-- Fix obvious name misspellings (be consistent across segments)
-- Preserve the speaker's original words — do NOT rephrase, summarize, or paraphrase
-- If a segment contains "[inaudible]", keep that marker as-is
-- If a segment is mostly noise or completely unintelligible, replace it with "[inaudible]"
-- If a segment is fine, return it unchanged
-- The transcript is in {lang_name}. Some segments may contain English terms or code-switching — preserve those naturally
-- Return EXACTLY the same number of items as the input, in the same order
-- Return ONLY a JSON array of strings, one per segment: ["cleaned segment 1", "cleaned segment 2", ...]
-- Do NOT add any explanation, just the JSON array"""
+    system_prompt = transcript_cleaner_system(lang_name)
 
     # Process in chunks. We use gemma4:26b (proven ~15-30s per call under live
     # load) rather than 31b, and cap concurrency so we don't queue requests
@@ -1571,30 +1461,7 @@ async def generate_synthesis(request: Request):
 
     all_sessions_text = '\n---\n\n'.join(session_blocks)
 
-    system_prompt = f"""You synthesize insights across multiple session recaps from the same event or day.
-You have access to each session's recap (elevator pitch, key takeaways, connections, summary).
-
-Your job is to find the threads that run BETWEEN sessions — ideas that evolved, echoed, or contradicted each other across different conversations.
-
-Return ONLY valid JSON with this exact structure:
-{{
-  "elevator_pitch": "The day/event in 2-3 sentences. What would a participant tell a colleague? Written in {lang_name}, first person plural.",
-  "cross_connections": [
-    {{"sessions": ["id1", "id2"], "topics": ["Topic A", "Topic B"], "insight": "What the link across these sessions reveals."}}
-  ],
-  "evolution": ["How an idea or theme evolved from one session to the next."],
-  "tensions": ["Where one session contradicted or complicated another's conclusions."],
-  "synthesis": "2-3 paragraph narrative of the day's arc — what emerged across all sessions taken together.",
-  "language": "{session_lang}"
-}}
-
-Rules:
-- elevator_pitch: Written in {lang_name}, first person. Something a participant would actually say.
-- cross_connections: 0 to 5 items. Reference the specific session IDs. Draw on graph edges across sessions to find themes that link different conversations. Return an EMPTY ARRAY rather than fabricate.
-- evolution: How ideas developed across the timeline of sessions. Empty array if nothing evolved.
-- tensions: Where sessions disagreed or complicated each other. Often empty — that's fine.
-- synthesis: A narrative, not a list. This is the "big picture" view of the day.
-- Prefer empty arrays over speculation. Never invent connections."""
+    system_prompt = cross_session_system(lang_name, session_lang)
 
     user_prompt = f"{all_sessions_text}\n\nGenerate the cross-session synthesis."
 
@@ -1965,7 +1832,7 @@ async def _call_hugin(body: dict) -> tuple[int, dict]:
     oai_messages = []
     system_text = body.get("system", "")
     # Always prepend the structured-output prefix for local models
-    system_text = _SMALL_MODEL_GRAPH_PREFIX + system_text
+    system_text = SMALL_MODEL_GRAPH_PREFIX + system_text
     oai_messages.append({"role": "system", "content": system_text})
     for msg in body.get("messages", []):
         oai_messages.append({"role": msg["role"], "content": msg["content"]})
@@ -2026,7 +1893,7 @@ async def _call_gemini(body: dict) -> tuple[int, dict]:
     system_text = body.get("system", "")
     if system_text:
         # Gemini is good at JSON but benefits from the same structural hints
-        system_text = _SMALL_MODEL_GRAPH_PREFIX + system_text
+        system_text = SMALL_MODEL_GRAPH_PREFIX + system_text
         oai_messages.append({"role": "system", "content": system_text})
     for msg in body.get("messages", []):
         oai_messages.append({"role": msg["role"], "content": msg["content"]})
@@ -2227,24 +2094,6 @@ def _publish_llm_state() -> None:
         metrics["cb_failures"] = total_failures
 
 
-# ─── Slide prompt injection ───────────────────────────────────────────────────
-_SLIDES_INJECT = """
-
-Additionally, return a "slide_updates" array in the same JSON object.
-For each slide whose topic is addressed in the CURRENT transcript excerpt, provide:
-  {"slide_id": "...", "bullets": ["...", "..."], "key_quote": "verbatim quote or null if none"}
-Slide IDs and their questions:
-  pos_what_sell="What we sell?", pos_why_now="Why now?",
-  pos_why_us="Why are we well positioned?", pos_to_whom="To Whom?",
-  pos_statement="Position statement (one sentence summary)",
-  val_what_do="What we do?", val_how="How we do it?",
-  val_paid="What do we get paid?", val_scope="Scope, boundaries & non-goals",
-  d2_targets="Targets and horizon", d2_priorities="Priorities and orchestration"
-Only include slides with NEW relevant content from the current segment.
-Max 5 bullets per slide. Each bullet ≤ 15 words.
-If no slide is addressed in this segment, return "slide_updates": [].
-"""
-
 
 async def _proxy_claude(websocket: WebSocket, req: dict):
     """Proxy an LLM request server-side, walking the fallback chain."""
@@ -2256,7 +2105,7 @@ async def _proxy_claude(websocket: WebSocket, req: dict):
     try:
         body = dict(req.get("body", {}))
         # Inject slide extraction into every graph analysis call
-        body["system"] = body.get("system", "") + _SLIDES_INJECT
+        body["system"] = body.get("system", "") + SLIDES_INJECT
         status_code, data, provider, model = await call_llm_chain(body)
         dt = time.time() - t0
 
