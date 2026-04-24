@@ -33,7 +33,7 @@ specs/
 corpus/
 
 # Brand assets (confidential)
-assets/template_cap_pptx.pptx
+assets/
 
 # Internal tooling docs
 docs/superpowers/
