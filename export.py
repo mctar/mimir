@@ -941,74 +941,31 @@ CATALOGUE DE LAYOUTS DISPONIBLES :
 RÈGLES :
 - Choisis le layout le plus approprié au contenu de chaque slide.
 - Pour "bullets" : max 6 items, max 15 mots par item.
-- Pour les contenus pouvant être découpés en éléments parallèles (catégories, thèmes, acteurs, étapes, dimensions) : utilise "cards-3", "cards-4", "cards-5" ou "cards-4-rounded" en priorité plutôt que "bullets" ou "three-columns".
+- Pour les contenus découpables en éléments parallèles (catégories, thèmes, étapes, dimensions) : utilise "cards-3", "cards-4", "cards-5" ou "cards-4-rounded" en priorité.
   Choisis le nombre selon la richesse du contenu (3 = synthèse, 4-5 = détail).
   "cards-4-rounded" est une variante visuelle de "cards-4" : varie les deux pour éviter la répétition.
-- Si un DECK ACTUEL est fourni, applique les INSTRUCTIONS en le modifiant
-  (ne recrée pas de zéro sauf si explicitement demandé).
+- Pour "divider" : utilise-le pour introduire chaque grande section (ex. POSITIONING, VALUE PROPOSITION).
+- Si un DECK ACTUEL est fourni, applique les INSTRUCTIONS en le modifiant (ne recrée pas de zéro sauf si explicitement demandé).
 - Max 15 slides. Si le contenu dépasse, priorise et condense.
 - Output : JSON uniquement. Aucun texte autour. Aucune fence markdown.
 - Format attendu :
   {{"schema_version": 1, "slides": [{{"layout": "...", "slots": {{...}}}}]}}
+
+STRUCTURE RECOMMANDÉE pour un recap de type Positioning/Value Proposition :
+1. cover         — slide de titre (topic, date, durée)
+2. bullets/cards — vue d'ensemble des thèmes abordés (optionnel)
+3. divider       — séparateur "POSITIONING" (number "01")
+4. Une slide par sous-thème de positioning (what_to_sell, why_now, why_well_positioned, to_whom)
+   → Préfère cards-* pour les listes parallèles, bullets pour les items linéaires
+5. quote-large   — positioning statement
+6. divider       — séparateur "VALUE PROPOSITION" (number "02")
+7. Une slide par sous-thème de value proposition (what_we_do, how_we_do_it, how_we_get_paid)
+8. bullets       — scope / boundaries / non-goals
+9. [optionnel]   — slide de conclusion ou wrap-up
+
+Adapte cette structure au contenu réel. Si un champ est absent ou vide dans le récap,
+ne génère pas de slide pour lui. Si le récap a une structure différente, adapte en conséquence.
 """
-
-
-def _bullets_to_card(bullets: list) -> str:
-    """Join a list of bullet strings into a card content string."""
-    if not bullets:
-        return "—"
-    return "\n".join(bullets)
-
-
-def _build_v3_fixed_slides(recap: dict, session_topic: str, session_date: str) -> list:
-    """Build the 5 mandatory framework slides from a V3 recap dict."""
-    return [
-        {
-            "layout": "cover",
-            "slots": {
-                "title": session_topic,
-                "date": session_date,
-                "duration": f"{int(recap.get('transcript_stats', {}).get('duration_minutes') or 0)} min",
-            },
-        },
-        {
-            "layout": "cards-4",
-            "slots": {
-                "title": "Positioning",
-                "cards": [
-                    {"heading": "What do we sell?", "content": _bullets_to_card(recap.get("positioning", {}).get("what_to_sell", []))},
-                    {"heading": "Why now?", "content": _bullets_to_card(recap.get("positioning", {}).get("why_now", []))},
-                    {"heading": "Why are we well positioned?", "content": _bullets_to_card(recap.get("positioning", {}).get("why_well_positioned", []))},
-                    {"heading": "To whom?", "content": _bullets_to_card(recap.get("positioning", {}).get("to_whom", []))},
-                ],
-            },
-        },
-        {
-            "layout": "cards-3",
-            "slots": {
-                "title": "Value Proposition",
-                "cards": [
-                    {"heading": "What do we do?", "content": _bullets_to_card(recap.get("value_proposition", {}).get("what_we_do", []))},
-                    {"heading": "How do we do it?", "content": _bullets_to_card(recap.get("value_proposition", {}).get("how_we_do_it", []))},
-                    {"heading": "How do we get paid?", "content": _bullets_to_card(recap.get("value_proposition", {}).get("how_we_get_paid", []))},
-                ],
-            },
-        },
-        {
-            "layout": "quote-large",
-            "slots": {
-                "title": "Positioning Statement",
-                "body": recap.get("positioning_statement", ""),
-            },
-        },
-        {
-            "layout": "bullets",
-            "slots": {
-                "title": "Scope / Boundaries / Non-Goals",
-                "bullets": recap.get("scope_boundaries_non_goals", [])[:6],
-            },
-        },
-    ]
 
 
 async def generate_deck_spec(
@@ -1020,108 +977,52 @@ async def generate_deck_spec(
     session_topic: str = "",
     session_date: str = "",
 ) -> dict:
-    """Call LLM to generate or update a deck_spec from transcript + recap + instructions.
+    """Generate a deck_spec from transcript + recap + instructions via LLM.
 
     Returns the deck_spec dict. Retries once on invalid JSON.
     Raises RuntimeError if all tiers fail.
     """
-    # ── V3 schema: hybrid fixed + optional LLM slide ──────────────────────
-    if recap.get("schema_version") == 3:
-        fixed_slides = _build_v3_fixed_slides(recap, session_topic, session_date)
-
-        # Truncate transcript for the optional LLM call
-        max_transcript = 8000
-        t = transcript
-        if len(t) > max_transcript:
-            t = "[...]\n" + t[-max_transcript:]
-
-        v3_user_prompt = (
-            f"TRANSCRIPT:\n{t}\n\n"
-            f"RECAP:\n{json.dumps(recap, ensure_ascii=False, indent=2)}\n\n"
-            f"MANDATORY SLIDES (already defined, do NOT modify):\n"
-            f"{json.dumps({'schema_version': 1, 'slides': fixed_slides}, ensure_ascii=False, indent=2)}\n\n"
-            + (f"INSTRUCTIONS:\n{instructions.strip()}\n\n" if instructions and instructions.strip() else "")
-            + "You MAY append 0 or 1 executive summary slide with a layout of your choice from the catalog. "
-            "Do NOT add slides about non-obvious connections, tensions, or graph-based insights. "
-            "If the mandatory slides already cover the content well, return an empty slides array. "
-            "Output JSON: {\"schema_version\": 1, \"slides\": []} — only the optional slides you want to add, NOT the mandatory ones."
-        )
-
-        for attempt in range(2):
-            reminder = "" if attempt == 0 else "RAPPEL : output JSON uniquement, aucun texte, aucune fence markdown."
-            prompt = v3_user_prompt + ("\n\n" + reminder if reminder else "")
-            parsed_ok = False
-            for tier in chain:
-                provider, model = tier["provider"], tier["model"]
-                try:
-                    raw = await _llm_call_slides(tier, _DECK_SPEC_SYSTEM, prompt)
-                    raw = raw.strip()
-                    if raw.startswith("```"):
-                        raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
-                        raw = re.sub(r"\n?```$", "", raw)
-                        raw = raw.strip()
-                    extra = json.loads(raw)
-                    extra_slides = extra.get("slides", [])
-                    # Cap: 5 fixed + at most 1 optional = 6 total
-                    if extra_slides:
-                        fixed_slides = fixed_slides + [extra_slides[0]]
-                    parsed_ok = True
-                    break
-                except json.JSONDecodeError as e:
-                    logger.warning(f"generate_deck_spec V3 attempt {attempt+1}: JSON parse error — {e}")
-                    break  # retry with reminder
-                except Exception as e:
-                    logger.warning(f"generate_deck_spec V3 tier {provider}/{model} failed: {e}")
-                    continue  # try next tier
-            if parsed_ok:
-                break  # Successfully parsed — exit retry loop
-
-        return {"schema_version": 1, "slides": fixed_slides}
-    # ── end V3 ────────────────────────────────────────────────────────────
-
     # Truncate transcript — keep tail (most recent content is most relevant)
     max_transcript = 8000
     if len(transcript) > max_transcript:
         transcript = "[...]\n" + transcript[-max_transcript:]
 
-    # NOTE: This inner function is superseded by the module-level _build_user_prompt()
-    # and will be removed when generate_deck_spec() is rewritten in the next task.
-    def _build_user_prompt(reminder: str = "") -> str:
-        parts = [f"TRANSCRIPT :\n{transcript}", f"RÉCAP :\n{json.dumps(recap, ensure_ascii=False, indent=2)}"]
-        if current_deck_spec:
-            parts.append(f"DECK ACTUEL :\n{json.dumps(current_deck_spec, ensure_ascii=False, indent=2)}")
-        if instructions and instructions.strip():
-            parts.append(f"INSTRUCTIONS :\n{instructions.strip()}")
-        if reminder:
-            parts.append(reminder)
-        parts.append("Génère le deck_spec JSON.")
-        return "\n\n".join(parts)
-
     last_error = None
     for attempt in range(2):
-        reminder = "" if attempt == 0 else "RAPPEL : output JSON uniquement, aucun texte, aucune fence markdown."
-        user_prompt = _build_user_prompt(reminder)
+        reminder = (
+            "" if attempt == 0
+            else "RAPPEL : output JSON uniquement, aucun texte, aucune fence markdown."
+        )
+        user_prompt = _build_user_prompt(
+            recap=recap,
+            transcript=transcript,
+            instructions=instructions,
+            current_deck_spec=current_deck_spec,
+            session_topic=session_topic,
+            session_date=session_date,
+            reminder=reminder,
+        )
 
         for tier in chain:
             provider, model = tier["provider"], tier["model"]
             try:
                 raw = await _llm_call_slides(tier, _DECK_SPEC_SYSTEM, user_prompt)
-                # Strip markdown fences if present
                 raw = raw.strip()
                 if raw.startswith("```"):
                     raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
                     raw = re.sub(r"\n?```$", "", raw)
                     raw = raw.strip()
                 spec = json.loads(raw)
-                # Enforce max slides
                 if len(spec.get("slides", [])) > 15:
-                    logger.warning(f"generate_deck_spec: {len(spec['slides'])} slides, truncating to 15")
+                    logger.warning(
+                        f"generate_deck_spec: {len(spec['slides'])} slides, truncating to 15"
+                    )
                     spec["slides"] = spec["slides"][:15]
                 return spec
             except json.JSONDecodeError as e:
                 logger.warning(f"generate_deck_spec attempt {attempt+1}: JSON parse error — {e}")
                 last_error = e
-                break  # retry with reminder
+                break  # retry outer loop with reminder
             except Exception as e:
                 logger.warning(f"generate_deck_spec tier {provider}/{model} failed: {e}")
                 last_error = e
