@@ -2179,14 +2179,19 @@ function renderRecapV3(r) {
     if (_editingField === fieldId) {
       return `<div class="v3-sub-question">
         <div class="v3-sub-label">${label} ${editBtn(fieldId)}</div>
-        <ul id="edit-v3-list-${fieldId.replace('.', '-')}" class="v3-edit-list">
-          ${bullets.map(b => `<li><input type="text" class="recap-edit-input" value="${esc(b)}"> <button class="recap-edit-del" onclick="this.closest('li').remove()">×</button></li>`).join('')}
+        <ul id="edit-v3-list-${fieldId.replace(/\./g, '-')}" class="v3-edit-list">
+          ${bullets.map(b => `<li><input type="text" class="recap-edit-input" value="${esc(b).replace(/"/g, '&quot;')}"> <button class="recap-edit-del" onclick="this.closest('li').remove()">×</button></li>`).join('')}
         </ul>
-        <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addEditItem('edit-v3-list-${fieldId.replace('.', '-')}','li')">+ Add</button>
+        <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addEditItem('edit-v3-list-${fieldId.replace(/\./g, '-')}','li')">+ Add</button>
         ${editActions()}
       </div>`;
     }
-    if (!bullets || bullets.length === 0) return '';
+    if (!bullets || bullets.length === 0) {
+      return `<div class="v3-sub-question">
+        <div class="v3-sub-label">${label} ${editBtn(fieldId)}</div>
+        <div class="v3-empty-col">Not discussed.</div>
+      </div>`;
+    }
     return `<div class="v3-sub-question">
       <div class="v3-sub-label">${label} ${editBtn(fieldId)}</div>
       <ul class="v3-sub-bullets">
@@ -2208,10 +2213,12 @@ function renderRecapV3(r) {
       <textarea id="edit-positioning_statement" class="recap-edit-textarea" style="min-height:60px">${esc(r.positioning_statement || '')}</textarea>
       ${editActions()}
     </div>`;
-  } else if (r.positioning_statement) {
+  } else {
     statementContent = `<div class="v3-statement">
       <div class="v3-statement-label">Positioning Statement ${editBtn('positioning_statement')}</div>
-      <div class="v3-statement-text">"${esc(r.positioning_statement)}"</div>
+      ${r.positioning_statement
+        ? `<div class="v3-statement-text">"${esc(r.positioning_statement)}"</div>`
+        : `<div class="v3-empty-col">Not captured — click to add.</div>`}
     </div>`;
   }
 
@@ -2226,17 +2233,17 @@ function renderRecapV3(r) {
     scopeContent = `<div class="v3-scope">
       <div class="v3-scope-label">Scope / Boundaries / Non-Goals ${editBtn('scope_boundaries_non_goals')}</div>
       <ul id="edit-v3-list-scope" class="v3-edit-list">
-        ${scope.map(s => `<li><input type="text" class="recap-edit-input" value="${esc(s)}"> <button class="recap-edit-del" onclick="this.closest('li').remove()">×</button></li>`).join('')}
+        ${scope.map(s => `<li><input type="text" class="recap-edit-input" value="${esc(s).replace(/"/g, '&quot;')}"> <button class="recap-edit-del" onclick="this.closest('li').remove()">×</button></li>`).join('')}
       </ul>
       <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addEditItem('edit-v3-list-scope','li')">+ Add</button>
       ${editActions()}
     </div>`;
-  } else if (scope.length) {
+  } else {
     scopeContent = `<div class="v3-scope">
       <div class="v3-scope-label">Scope / Boundaries / Non-Goals ${editBtn('scope_boundaries_non_goals')}</div>
-      <ul class="v3-sub-bullets">
-        ${scope.map(s => `<li>${esc(s)}</li>`).join('')}
-      </ul>
+      ${scope.length
+        ? `<ul class="v3-sub-bullets">${scope.map(s => `<li>${esc(s)}</li>`).join('')}</ul>`
+        : `<div class="v3-empty-col">Not captured — click to add.</div>`}
     </div>`;
   }
 
