@@ -68,7 +68,7 @@ def test_deck_spec_headline_quality_rule():
 def test_deck_spec_language_instruction():
     """Output language must be derived from the recap language, not hardcoded."""
     prompt = deck_spec_system("CATALOG_PLACEHOLDER")
-    assert "language of the" in prompt.lower()
+    assert "language of the recap" in prompt.lower() or "language of the provided recap" in prompt.lower()
 
 
 # ── HTML_SLIDES_SYSTEM ────────────────────────────────────────────────────────
