@@ -1294,8 +1294,11 @@ async def generate_deck_spec(
 
 
 async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db",
-                      chain: list[dict] | None = None) -> None:
-    """Generate a PPTX slide deck via LLM (deck_spec) then assemble deterministically."""
+                      chain: list[dict] | None = None) -> dict:
+    """Generate a PPTX slide deck via LLM then assemble, with a QA loop (max 3 attempts).
+
+    Returns a QA result dict: {passed, attempts, structural_issues, visual_issues, warnings, summary}.
+    """
     if not chain:
         raise RuntimeError("export_pptx requires a chain. Pass chain= from app.py.")
 
