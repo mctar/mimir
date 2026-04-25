@@ -196,6 +196,64 @@ def test_generate_deck_spec_parses_valid_json():
     assert result["slides"][0]["layout"] == "cover"
 
 
+def test_structural_qa_passes_valid_deck():
+    from export import _structural_qa
+    deck_spec = {"slides": [
+        {"layout": "cover",        "slots": {"title": "The orchestrator model wins"}},
+        {"layout": "bullets",      "slots": {"title": "The market is shifting now"}},
+        {"layout": "cards-3",      "slots": {"title": "Three pillars of value"}},
+        {"layout": "two-columns",  "slots": {"title": "Delivery unlocks margin"}},
+        {"layout": "divider",      "slots": {"title": "VALUE PROPOSITION"}},
+    ]}
+    result = _structural_qa(deck_spec)
+    assert result["passed"] is True
+    assert result["issues"] == []
+
+
+def test_structural_qa_fails_consecutive_layouts():
+    from export import _structural_qa
+    deck_spec = {"slides": [
+        {"layout": "bullets", "slots": {"title": "A"}},
+        {"layout": "bullets", "slots": {"title": "B"}},
+        {"layout": "bullets", "slots": {"title": "C"}},
+        {"layout": "bullets", "slots": {"title": "D"}},  # 4th consecutive
+    ]}
+    result = _structural_qa(deck_spec)
+    assert result["passed"] is False
+    assert any("consecutive" in issue for issue in result["issues"])
+
+
+def test_structural_qa_fails_gerundive_titles():
+    from export import _structural_qa
+    deck_spec = {"slides": [
+        {"layout": "bullets", "slots": {"title": "Positioning the Org"}},
+        {"layout": "bullets", "slots": {"title": "Building the Model"}},
+        {"layout": "bullets", "slots": {"title": "Delivering Value"}},  # 3rd gerundive
+    ]}
+    result = _structural_qa(deck_spec)
+    assert result["passed"] is False
+    assert any("gerundive" in issue for issue in result["issues"])
+
+
+def test_structural_qa_fails_too_few_slides():
+    from export import _structural_qa
+    deck_spec = {"slides": [
+        {"layout": "cover", "slots": {"title": "T"}},
+        {"layout": "bullets", "slots": {"title": "B"}},
+    ]}
+    result = _structural_qa(deck_spec)
+    assert result["passed"] is False
+    assert any("count" in issue for issue in result["issues"])
+
+
+def test_structural_qa_fails_too_many_slides():
+    from export import _structural_qa
+    slides = [{"layout": "bullets", "slots": {"title": f"Slide {i}"}} for i in range(16)]
+    result = _structural_qa({"slides": slides})
+    assert result["passed"] is False
+    assert any("count" in issue for issue in result["issues"])
+
+
 def test_generate_deck_spec_retries_on_invalid_json():
     """generate_deck_spec réessaie une fois si le JSON est invalide."""
     import export as exp

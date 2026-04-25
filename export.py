@@ -873,6 +873,42 @@ _LAYOUT_CATALOG_STR = "\n".join(
 )
 
 
+def _structural_qa(deck_spec: dict) -> dict:
+    """Check deck_spec structure before assembly. Returns {"passed": bool, "issues": list[str]}."""
+    import re
+    issues = []
+    slides = deck_spec.get("slides", [])
+
+    if not (3 <= len(slides) <= 15):
+        issues.append(f"Slide count {len(slides)} is outside allowed range 3–15")
+
+    consecutive = 1
+    for i in range(1, len(slides)):
+        if slides[i].get("layout") == slides[i - 1].get("layout"):
+            consecutive += 1
+            if consecutive > 3:
+                issues.append(
+                    f"Slides {i - 2}–{i + 1}: {consecutive} consecutive "
+                    f"'{slides[i]['layout']}' layouts (max 3)"
+                )
+                break
+        else:
+            consecutive = 1
+
+    gerundive = re.compile(r"^[A-Z][a-zA-Z]+ing\b")
+    bad_titles = [
+        f"Slide {i + 1}: \"{s.get('slots', {}).get('title', '')}\""
+        for i, s in enumerate(slides)
+        if gerundive.match(s.get("slots", {}).get("title", ""))
+    ]
+    if len(bad_titles) > 2:
+        issues.append(
+            f"{len(bad_titles)} gerundive slide titles (max 2): {'; '.join(bad_titles)}"
+        )
+
+    return {"passed": len(issues) == 0, "issues": issues}
+
+
 def _clear_slides(prs) -> None:
     """Remove all existing slides from a Presentation, keeping slide layouts and masters."""
     from pptx.oxml.ns import qn
