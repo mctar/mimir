@@ -912,16 +912,17 @@ def _structural_qa(deck_spec: dict) -> dict:
 
 
 def _format_qa_feedback(structural_issues: list, visual_blocking: list) -> str:
-    """Format QA issues as a feedback block for the next generate_deck_spec call.
+    """Format blocking QA issues as a feedback block for the next generate_deck_spec call.
 
-    Only blocking visual issues are included; warnings are silently dropped.
+    Returns empty string when there are no blocking issues.
     """
+    blocking_visual = [i for i in visual_blocking if i.get("severity") != "warning"]
+    if not structural_issues and not blocking_visual:
+        return ""
     lines = ["QA FEEDBACK from previous generation — fix these issues:"]
     for issue in structural_issues:
         lines.append(f"[STRUCTURAL] {issue}")
-    for issue in visual_blocking:
-        if issue.get("severity") == "warning":
-            continue
+    for issue in blocking_visual:
         cat = issue.get("category", "issue").upper()
         slide = issue.get("slide", "?")
         desc = issue.get("description", "")

@@ -804,3 +804,9 @@ def test_generate_deck_spec_includes_qa_feedback():
 
     assert "QA FEEDBACK" in captured["user"]
     assert "Slide 3" in captured["user"]
+
+
+def test_format_qa_feedback_empty_returns_empty_string():
+    from export import _format_qa_feedback
+    result = _format_qa_feedback(structural_issues=[], visual_blocking=[])
+    assert result == ""
