@@ -908,7 +908,7 @@ async def delete_corpus_doc(doc_id: int):
     return JSONResponse({"ok": True})
 
 
-_export_tasks: dict[str, dict] = {}  # session_id -> {task, status, path, error}
+_export_tasks: dict[str, dict] = {}  # session_id -> {status, path, error, qa}
 
 @app.post("/v1/sessions/{session_id}/export/{fmt}")
 async def start_export(session_id: str, fmt: str, request: Request):
