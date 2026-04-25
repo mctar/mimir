@@ -14,7 +14,7 @@ Prerequisites:
     pip install playwright && playwright install chromium
 """
 
-import argparse, asyncio, json, os, re, subprocess, sys, tempfile
+import argparse, asyncio, base64, json, os, re, subprocess, sys, tempfile
 from datetime import datetime
 
 from log import logger
@@ -928,6 +928,46 @@ def _format_qa_feedback(structural_issues: list, visual_blocking: list) -> str:
         desc = issue.get("description", "")
         lines.append(f"[{cat}] Slide {slide}: {desc}")
     return "\n".join(lines)
+
+
+def _soffice_path() -> str | None:
+    """Find LibreOffice soffice binary on macOS or Linux. Returns None if not found."""
+    import shutil
+    mac_path = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+    if os.path.exists(mac_path):
+        return mac_path
+    return shutil.which("soffice")
+
+
+def _png_slide_index(path: str) -> int:
+    m = re.search(r"(\d+)\.png$", path)
+    return int(m.group(1)) if m else 0
+
+
+def _pptx_to_thumbnails(pptx_path: str, tmpdir: str) -> list:
+    """Convert a .pptx to per-slide PNG thumbnails via LibreOffice headless.
+
+    Returns sorted list of PNG paths. Returns [] if soffice is unavailable or fails.
+    """
+    soffice = _soffice_path()
+    if not soffice:
+        return []
+    try:
+        result = subprocess.run(
+            [soffice, "--headless", "--convert-to", "png", "--outdir", tmpdir, pptx_path],
+            capture_output=True, timeout=60,
+        )
+        if result.returncode != 0:
+            logger.error(f"_pptx_to_thumbnails: soffice failed: {result.stderr.decode()}")
+            return []
+    except Exception as e:
+        logger.error(f"_pptx_to_thumbnails: soffice error: {e}")
+        return []
+    pngs = sorted(
+        [os.path.join(tmpdir, f) for f in os.listdir(tmpdir) if f.lower().endswith(".png")],
+        key=_png_slide_index,
+    )
+    return pngs
 
 
 def _clear_slides(prs) -> None:

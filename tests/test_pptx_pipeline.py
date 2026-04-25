@@ -810,3 +810,39 @@ def test_format_qa_feedback_empty_returns_empty_string():
     from export import _format_qa_feedback
     result = _format_qa_feedback(structural_issues=[], visual_blocking=[])
     assert result == ""
+
+
+def test_soffice_path_returns_none_when_absent(monkeypatch):
+    import shutil
+    from unittest import mock
+    import export as exp
+
+    monkeypatch.setattr(shutil, "which", lambda _: None)
+    monkeypatch.setattr(os.path, "exists", lambda p: False)
+    result = exp._soffice_path()
+    assert result is None
+
+
+def test_pptx_to_thumbnails_returns_empty_when_no_soffice(monkeypatch):
+    import export as exp
+    monkeypatch.setattr(exp, "_soffice_path", lambda: None)
+    result = exp._pptx_to_thumbnails("/fake/deck.pptx", "/tmp/out")
+    assert result == []
+
+
+def test_pptx_to_thumbnails_sorted_by_slide_number(tmp_path):
+    import export as exp
+
+    # Create fake PNG files with numeric suffixes
+    for name in ["deck3.png", "deck1.png", "deck10.png", "deck2.png"]:
+        (tmp_path / name).write_bytes(b"fake")
+
+    # Patch _soffice_path and subprocess.run to succeed without actually running soffice
+    from unittest import mock
+    with mock.patch.object(exp, "_soffice_path", return_value="/usr/bin/soffice"), \
+         mock.patch("subprocess.run", return_value=mock.Mock(returncode=0)):
+        result = exp._pptx_to_thumbnails("/fake/deck.pptx", str(tmp_path))
+
+    nums = [int(__import__("re").search(r"(\d+)\.png$", p).group(1)) for p in result]
+    assert nums == sorted(nums)
+    assert nums == [1, 2, 3, 10]
