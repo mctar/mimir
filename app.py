@@ -935,7 +935,7 @@ async def start_export(session_id: str, fmt: str, request: Request):
     ext = {"pdf": "pdf", "video": "mp4", "slides": "html", "pptx": "pptx"}[fmt]
     outfile = os.path.join(tempfile.gettempdir(), f"mimir-{session_id}.{ext}")
 
-    _export_tasks[task_key] = {"status": "running", "path": outfile, "error": None}
+    _export_tasks[task_key] = {"status": "running", "path": outfile, "error": None, "qa": None}
 
     async def run_export():
         try:
@@ -951,7 +951,8 @@ async def start_export(session_id: str, fmt: str, request: Request):
             elif fmt == "pptx":
                 with _llm_chain_lock:
                     chain = [dict(t) for t in _llm_chain]
-                await export_pptx(session_id, outfile, chain=chain)
+                qa_result = await export_pptx(session_id, outfile, chain=chain)
+                _export_tasks[task_key]["qa"] = qa_result
             else:
                 with _llm_chain_lock:
                     chain = [dict(t) for t in _llm_chain]
@@ -975,7 +976,7 @@ async def export_status(session_id: str, fmt: str):
         logger.info(f"[export] poll {fmt} {session_id} → not_found")
         return JSONResponse({"status": "not_found"}, status_code=404)
     logger.info(f"[export] poll {fmt} {session_id} → {info['status']}")
-    return JSONResponse({"status": info["status"], "error": info.get("error")})
+    return JSONResponse({"status": info["status"], "error": info.get("error"), "qa": info.get("qa")})
 
 
 @app.get("/v1/sessions/{session_id}/export/{fmt}/download")
