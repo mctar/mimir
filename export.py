@@ -14,7 +14,7 @@ Prerequisites:
     pip install playwright && playwright install chromium
 """
 
-import argparse, asyncio, json, os, re, subprocess, sys, tempfile
+import argparse, asyncio, base64, json, os, re, subprocess, sys, tempfile
 from datetime import datetime
 
 from log import logger
@@ -969,6 +969,159 @@ def _pptx_to_thumbnails(pptx_path: str, tmpdir: str) -> list[str]:
         key=_png_slide_index,
     )
     return pngs
+
+
+_VISUAL_QA_PROMPT = """\
+You are inspecting an auto-generated PowerPoint presentation.
+Inspect each slide and evaluate the following criteria:
+
+1. CAPGEMINI TEMPLATE COMPLIANCE
+   Each slide must use the Capgemini Invent dark navy background,
+   corporate blue (#0058AB), and must not display a white or generic background.
+
+2. LAYOUT DIVERSITY
+   The deck must alternate between layouts (cards, bullets, columns, quotes).
+   Flag if more than 3 consecutive slides share the same visual structure.
+
+3. EXECUTIVE COMMITTEE CONTENT QUALITY
+   For each content slide (excluding cover and dividers):
+   - Is the title a DECLARATIVE ASSERTION (not a gerundive description)?
+     Good example: "The Transform-then-Run model is our primary competitive moat"
+     Bad example: "Positioning Capgemini Invent in the Market"
+   - Does the content name a decision, implication, risk, or action?
+   - Is the language appropriate for a Group Executive Committee audience?
+
+4. AGENDA COVERAGE (informational only — never blocking)
+   Note which of the following themes are present in the deck.
+   Absence is expected if the topic has not yet been discussed in the live session.
+   Positioning: What we sell (Transform vs run; Asset/IP-led; Front/Core/Back) /
+     Why now (Market inflexion; IOPs momentum; Agentic operations) /
+     Why well positioned (Tri-pod; Orchestrator; Credibility) /
+     To Whom (CXO play; Customer tier; Archetypes) / Position statement
+   Value Prop: What we do (Value engine; E2E reinvention) /
+     How we do it (Deals anatomy; Capabilities aggregation) /
+     What we get paid for (Value/Risks/Cash; Shared accountability)
+   Targets & horizon / Priorities & orchestration / Scope & non-goals
+
+5. VISUAL STANDARDS
+   - Text truncated or overflowing its shape or zone
+   - Overlapping elements
+   - Visible unfilled placeholder ("Lorem ipsum", unexpected empty zone)
+
+Reply ONLY in strict JSON (no markdown fences, no extra text):
+{"passed": true, "issues": [{"slide": 1, "category": "template", "severity": "blocking", "description": "..."}], "summary": "..."}
+"passed" must be false if at least one issue has severity "blocking".\
+"""
+
+
+def _parse_visual_qa_response(raw: str) -> dict:
+    """Parse the JSON string returned by the visual QA Claude call.
+
+    Returns {"passed": bool, "issues": list[dict], "warnings": list[dict], "summary": str}.
+    Blocking issues go into "issues"; warning issues go into "warnings".
+    """
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw)
+        raw = raw.strip()
+    data = json.loads(raw)
+    issues = data.get("issues", [])
+    blocking = [i for i in issues if i.get("severity") == "blocking"]
+    warnings = [i for i in issues if i.get("severity") == "warning"]
+    return {
+        "passed": len(blocking) == 0,
+        "issues": blocking,
+        "warnings": warnings,
+        "summary": data.get("summary", ""),
+    }
+
+
+async def _visual_qa(
+    pptx_path: str,
+    deck_spec: dict,
+    session_topic: str = "",
+) -> dict:
+    """Run visual QA on a .pptx via LibreOffice thumbnails + Claude Haiku vision.
+
+    Returns {"passed": bool, "issues": list[dict], "warnings": list[dict], "summary": str}.
+    Gracefully skips (passed=True) if LibreOffice or Anthropic credentials are absent.
+    """
+    _skip = {"passed": True, "issues": [], "warnings": [], "summary": "Visual QA skipped"}
+
+    if not ANTHROPIC_API_KEY and not ANTHROPIC_AUTH_TOKEN:
+        logger.warning("_visual_qa: no Anthropic credentials — skipping")
+        return {**_skip, "summary": "Visual QA skipped (no Anthropic credentials)"}
+
+    if not _soffice_path():
+        logger.warning("_visual_qa: LibreOffice not found — skipping")
+        return {**_skip, "summary": "Visual QA skipped (LibreOffice not found)"}
+
+    with tempfile.TemporaryDirectory(prefix="mimir-qa-") as tmpdir:
+        png_paths = _pptx_to_thumbnails(pptx_path, tmpdir)
+        if not png_paths:
+            logger.warning("_visual_qa: thumbnail generation failed — skipping")
+            return {**_skip, "summary": "Visual QA skipped (thumbnail generation failed)"}
+
+        content = []
+
+        # Optional: inject one reference slide for style guidance
+        ref_deck = os.environ.get("PPTX_REFERENCE_DECK", "")
+        if ref_deck and os.path.exists(ref_deck):
+            with tempfile.TemporaryDirectory(prefix="mimir-ref-") as ref_tmpdir:
+                ref_pngs = _pptx_to_thumbnails(ref_deck, ref_tmpdir)
+                if ref_pngs:
+                    with open(ref_pngs[0], "rb") as f:
+                        ref_b64 = base64.b64encode(f.read()).decode()
+                    content.append({"type": "text", "text": "Reference: this is a correctly formatted Capgemini slide:"})
+                    content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": ref_b64}})
+
+        for i, path in enumerate(png_paths):
+            with open(path, "rb") as f:
+                img_b64 = base64.b64encode(f.read()).decode()
+            content.append({"type": "text", "text": f"Slide {i + 1}:"})
+            content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img_b64}})
+
+        ctx_note = "on the topic of Intelligent Operations (IOPS)"
+        if session_topic:
+            ctx_note += f" — {session_topic}"
+        context_header = (
+            f"Context: This deck is intended for the Capgemini Group Executive Committee, {ctx_note}.\n\n"
+        )
+        content.append({"type": "text", "text": context_header + _VISUAL_QA_PROMPT})
+
+        url = f"{ANTHROPIC_BASE_URL}/v1/messages"
+        headers = {"anthropic-version": "2023-06-01", "content-type": "application/json"}
+        if ANTHROPIC_AUTH_TOKEN:
+            headers["Authorization"] = f"Bearer {ANTHROPIC_AUTH_TOKEN}"
+        else:
+            headers["x-api-key"] = ANTHROPIC_API_KEY
+
+        body = {
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 1024,
+            "messages": [{"role": "user", "content": content}],
+        }
+
+        timeout = aiohttp.ClientTimeout(total=120)
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
+                    if r.status != 200:
+                        text = await r.text()
+                        logger.error(f"_visual_qa: API error {r.status}: {text[:200]}")
+                        return {**_skip, "summary": f"Visual QA skipped (API error {r.status})"}
+                    data = await r.json()
+                    raw = data["content"][0]["text"]
+        except Exception as e:
+            logger.error(f"_visual_qa: request failed: {e}")
+            return {**_skip, "summary": f"Visual QA skipped ({e})"}
+
+    try:
+        return _parse_visual_qa_response(raw)
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"_visual_qa: JSON parse error: {e} — raw: {raw[:200]}")
+        return {**_skip, "summary": "Visual QA skipped (invalid JSON response)"}
 
 
 def _clear_slides(prs) -> None:

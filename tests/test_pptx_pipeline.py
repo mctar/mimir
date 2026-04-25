@@ -846,3 +846,59 @@ def test_pptx_to_thumbnails_sorted_by_slide_number(tmp_path):
     nums = [int(__import__("re").search(r"(\d+)\.png$", p).group(1)) for p in result]
     assert nums == sorted(nums)
     assert nums == [1, 2, 3, 10]
+
+
+def test_visual_qa_skips_no_api_key(monkeypatch):
+    import asyncio, export as exp
+    monkeypatch.setattr(exp, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(exp, "ANTHROPIC_AUTH_TOKEN", "")
+    result = asyncio.run(exp._visual_qa("/fake/deck.pptx", {}, "IOPS"))
+    assert result["passed"] is True
+    assert "skipped" in result["summary"].lower()
+
+
+def test_visual_qa_skips_no_soffice(monkeypatch):
+    import asyncio, export as exp
+    monkeypatch.setattr(exp, "ANTHROPIC_API_KEY", "fake-key")
+    monkeypatch.setattr(exp, "ANTHROPIC_AUTH_TOKEN", "")
+    monkeypatch.setattr(exp, "_soffice_path", lambda: None)
+    result = asyncio.run(exp._visual_qa("/fake/deck.pptx", {}, "IOPS"))
+    assert result["passed"] is True
+    assert "skipped" in result["summary"].lower()
+
+
+def test_parse_visual_qa_response_passing():
+    import json
+    from export import _parse_visual_qa_response
+    raw = json.dumps({
+        "passed": True,
+        "issues": [],
+        "summary": "All slides look correct.",
+    })
+    result = _parse_visual_qa_response(raw)
+    assert result["passed"] is True
+    assert result["issues"] == []
+    assert result["warnings"] == []
+    assert result["summary"] == "All slides look correct."
+
+
+def test_parse_visual_qa_response_blocking_issues():
+    import json
+    from export import _parse_visual_qa_response
+    api_json = {
+        "passed": False,
+        "issues": [
+            {"slide": 2, "category": "visual", "severity": "blocking",
+             "description": "text truncated in body placeholder"},
+            {"slide": 4, "category": "template", "severity": "blocking",
+             "description": "white background detected"},
+            {"slide": 5, "category": "coverage", "severity": "warning",
+             "description": "agenda item not yet covered"},
+        ],
+        "summary": "2 blocking issues found.",
+    }
+    result = _parse_visual_qa_response(json.dumps(api_json))
+    assert result["passed"] is False
+    assert len(result["issues"]) == 2
+    assert len(result["warnings"]) == 1
+    assert result["summary"] == "2 blocking issues found."
