@@ -894,7 +894,6 @@ def _structural_qa(deck_spec: dict) -> dict:
                     f"Slides {i - 2}–{i + 1}: {consecutive} consecutive "
                     f"'{slides[i]['layout']}' layouts (max 3)"
                 )
-                break
         else:
             consecutive = 1
 

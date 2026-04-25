@@ -42,6 +42,7 @@
   --purple: #71609E;
   --blue: #0058AB;
   --cyan: #00D5D0;
+  --red: #f85149;
 }
 
 body {
@@ -3399,8 +3400,15 @@ async function generatePptx(event) {
         const icon = qa.passed ? '✓' : '⚠';
         const color = qa.passed ? 'var(--green, #3fb950)' : 'var(--yellow, #d29922)';
         let html = `<span style="color:${color}">${icon} QA (${qa.attempts} attempt${qa.attempts > 1 ? 's' : ''}): ${qa.summary || ''}</span>`;
+        if (qa.visual_issues && qa.visual_issues.length > 0) {
+          html += `<div style="margin:.3rem 0 0 0; color:var(--red, #f85149);">Blocking issues:</div>`;
+          html += `<ul style="margin:.1rem 0 0 1rem; padding:0;">` +
+            qa.visual_issues.map(i => `<li>${i}</li>`).join('') +
+            `</ul>`;
+        }
         if (qa.warnings && qa.warnings.length > 0) {
-          html += `<ul style="margin:.3rem 0 0 1rem; padding:0;">` +
+          html += `<div style="margin:.3rem 0 0 0; color:var(--dim);">Warnings:</div>`;
+          html += `<ul style="margin:.1rem 0 0 1rem; padding:0;">` +
             qa.warnings.map(w => `<li>${w}</li>`).join('') +
             `</ul>`;
         }
