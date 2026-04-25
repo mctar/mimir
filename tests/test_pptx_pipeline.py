@@ -730,3 +730,77 @@ def test_structural_qa_handles_null_title():
     ]}
     result = _structural_qa(deck_spec)
     assert result["passed"] is True  # None title should not crash or trigger gerundive
+
+
+def test_format_qa_feedback_structural_only():
+    from export import _format_qa_feedback
+    result = _format_qa_feedback(
+        structural_issues=["Slide count 2 is outside allowed range 3–15"],
+        visual_blocking=[],
+    )
+    assert "QA FEEDBACK" in result
+    assert "[STRUCTURAL]" in result
+    assert "Slide count 2" in result
+
+
+def test_format_qa_feedback_visual_only():
+    from export import _format_qa_feedback
+    result = _format_qa_feedback(
+        structural_issues=[],
+        visual_blocking=[
+            {"slide": 3, "category": "visual", "severity": "blocking",
+             "description": "text truncated in body zone"},
+        ],
+    )
+    assert "[VISUAL]" in result
+    assert "Slide 3" in result
+    assert "text truncated" in result
+
+
+def test_format_qa_feedback_excludes_warnings():
+    from export import _format_qa_feedback
+    result = _format_qa_feedback(
+        structural_issues=[],
+        visual_blocking=[
+            {"slide": 2, "category": "quality", "severity": "blocking",
+             "description": "gerundive title"},
+            {"slide": 4, "category": "coverage", "severity": "warning",
+             "description": "agenda item not yet covered"},
+        ],
+    )
+    assert "Slide 2" in result
+    assert "Slide 4" not in result  # warnings must not appear
+
+
+def test_generate_deck_spec_includes_qa_feedback():
+    import asyncio, json
+    import unittest.mock as mock
+    import export as exp
+
+    spec = {"schema_version": 1, "slides": [
+        {"layout": "cover", "slots": {"title": "T", "date": "", "duration": ""}},
+        {"layout": "bullets", "slots": {"title": "B", "bullets": []}},
+        {"layout": "cards-3", "slots": {"title": "C", "cards": [
+            {"heading": "A", "content": "a"},
+            {"heading": "B", "content": "b"},
+            {"heading": "C", "content": "c"},
+        ]}},
+    ]}
+    captured = {}
+
+    async def fake_call(tier, system, user):
+        captured["user"] = user
+        return json.dumps(spec)
+
+    with mock.patch.object(exp, "_llm_call_slides", fake_call):
+        asyncio.run(exp.generate_deck_spec(
+            transcript="text",
+            recap={},
+            instructions=None,
+            current_deck_spec=None,
+            chain=[{"provider": "test", "model": "m"}],
+            qa_feedback="QA FEEDBACK from previous generation — fix these issues:\n[VISUAL] Slide 3: text truncated",
+        ))
+
+    assert "QA FEEDBACK" in captured["user"]
+    assert "Slide 3" in captured["user"]

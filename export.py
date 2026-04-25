@@ -625,9 +625,12 @@ def _build_user_prompt(
     session_date: str = "",
     reminder: str = "",
     corpus_block: str = "",
+    qa_feedback: str = "",
 ) -> str:
     """Build the LLM user prompt for deck_spec generation."""
     parts = []
+    if qa_feedback and qa_feedback.strip():
+        parts.append(qa_feedback.strip())
     if instructions and instructions.strip():
         parts.append(
             "INSTRUCTIONS (apply to ALL slides — "
@@ -908,6 +911,24 @@ def _structural_qa(deck_spec: dict) -> dict:
     return {"passed": len(issues) == 0, "issues": issues}
 
 
+def _format_qa_feedback(structural_issues: list, visual_blocking: list) -> str:
+    """Format QA issues as a feedback block for the next generate_deck_spec call.
+
+    Only blocking visual issues are included; warnings are silently dropped.
+    """
+    lines = ["QA FEEDBACK from previous generation — fix these issues:"]
+    for issue in structural_issues:
+        lines.append(f"[STRUCTURAL] {issue}")
+    for issue in visual_blocking:
+        if issue.get("severity") == "warning":
+            continue
+        cat = issue.get("category", "issue").upper()
+        slide = issue.get("slide", "?")
+        desc = issue.get("description", "")
+        lines.append(f"[{cat}] Slide {slide}: {desc}")
+    return "\n".join(lines)
+
+
 def _clear_slides(prs) -> None:
     """Remove all existing slides from a Presentation, keeping slide layouts and masters."""
     from pptx.oxml.ns import qn
@@ -1017,6 +1038,7 @@ async def generate_deck_spec(
     session_topic: str = "",
     session_date: str = "",
     corpus_block: str = "",
+    qa_feedback: str = "",
 ) -> dict:
     """Generate a deck_spec from transcript + recap + instructions via LLM.
 
@@ -1043,6 +1065,7 @@ async def generate_deck_spec(
             session_date=session_date,
             reminder=reminder,
             corpus_block=corpus_block,
+            qa_feedback=qa_feedback,
         )
 
         for tier in chain:
