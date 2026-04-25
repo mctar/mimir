@@ -1356,6 +1356,8 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
 
     for attempt in range(3):
         qa_result["attempts"] = attempt + 1
+        current_feedback = qa_feedback
+        qa_feedback = ""  # reset for next attempt
 
         last_deck_spec = await generate_deck_spec(
             transcript=transcript,
@@ -1366,7 +1368,7 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
             session_topic=topic,
             session_date=session_date,
             corpus_block=corpus_block,
-            qa_feedback=qa_feedback,
+            qa_feedback=current_feedback,
         )
 
         # Step 1: Structural QA (no I/O, instant)
@@ -1407,7 +1409,8 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
             )
 
     served_model = chain[0]["model"]
-    await db.save_deck_spec(session_id, last_deck_spec, served_model)
+    if last_deck_spec is not None:
+        await db.save_deck_spec(session_id, last_deck_spec, served_model)
 
     return qa_result
 
