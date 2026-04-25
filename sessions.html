@@ -1438,6 +1438,7 @@ h1 {
         <button class="btn btn-primary" onclick="generatePptx(event)" id="btn-regen-pptx">Regénérer PPTX</button>
         <button class="btn btn-ghost" onclick="downloadPptx()" id="btn-dl-pptx">Télécharger</button>
       </div>
+      <div id="pptx-qa-result" style="display:none; margin-top:.75rem; font-size:.82rem; color:var(--dim);"></div>
     </div>
 
     <div id="pptx-no-deck" style="margin-top:.5rem;">
@@ -3357,6 +3358,8 @@ async function generatePptx(event) {
   const origText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Génération en cours…';
+  const qaResetEl = document.getElementById('pptx-qa-result');
+  if (qaResetEl) qaResetEl.style.display = 'none';
 
   try {
     const startResp = await fetch(`/v1/sessions/${sid}/export/pptx`, {
@@ -3387,6 +3390,22 @@ async function generatePptx(event) {
       // Reload deck_spec from DB (updated by server)
       await loadPptxData();
       document.getElementById('btn-dl-pptx').style.display = 'inline-block';
+
+      const qaEl = document.getElementById('pptx-qa-result');
+      const qa = pollData.qa;
+      if (qa && qaEl) {
+        const icon = qa.passed ? '✓' : '⚠';
+        const color = qa.passed ? 'var(--green, #3fb950)' : 'var(--yellow, #d29922)';
+        let html = `<span style="color:${color}">${icon} QA (${qa.attempts} attempt${qa.attempts > 1 ? 's' : ''}): ${qa.summary || ''}</span>`;
+        if (qa.warnings && qa.warnings.length > 0) {
+          html += `<ul style="margin:.3rem 0 0 1rem; padding:0;">` +
+            qa.warnings.map(w => `<li>${w}</li>`).join('') +
+            `</ul>`;
+        }
+        qaEl.innerHTML = html;
+        qaEl.style.display = 'block';
+      }
+
       toast('PPTX généré');
     }
   } catch(e) {
