@@ -633,7 +633,7 @@ def test_format_recap_unknown_keys():
 
 
 def test_build_user_prompt_instructions_first():
-    """Instructions block appears before RÉCAP block in the prompt."""
+    """Instructions block appears before RECAP block in the prompt."""
     from export import _build_user_prompt
 
     prompt = _build_user_prompt(
@@ -643,11 +643,11 @@ def test_build_user_prompt_instructions_first():
         current_deck_spec=None,
     )
     instructions_pos = prompt.find("INSTRUCTIONS")
-    recap_pos = prompt.find("RÉCAP")
+    recap_pos = prompt.find("RECAP")
     assert instructions_pos >= 0, "INSTRUCTIONS block missing"
-    assert recap_pos >= 0, "RÉCAP block missing"
-    assert instructions_pos < recap_pos, "INSTRUCTIONS must come before RÉCAP"
-    assert "TOUTES les slides" in prompt
+    assert recap_pos >= 0, "RECAP block missing"
+    assert instructions_pos < recap_pos, "INSTRUCTIONS must come before RECAP"
+    assert "ALL slides" in prompt
     assert "Translate everything to English" in prompt
 
 
@@ -662,7 +662,7 @@ def test_build_user_prompt_no_instructions():
         current_deck_spec=None,
     )
     assert "INSTRUCTIONS" not in prompt
-    assert "RÉCAP" in prompt
+    assert "RECAP" in prompt
 
     prompt2 = _build_user_prompt(
         recap={"elevator_pitch": "test"},
@@ -696,7 +696,7 @@ def test_assemble_divider_layout(tmp_path):
 
 
 def test_build_user_prompt_session_context():
-    """CONTEXTE block appears when session_topic or session_date is provided."""
+    """CONTEXT block appears when session_topic or session_date is provided."""
     from export import _build_user_prompt
 
     prompt = _build_user_prompt(
@@ -707,18 +707,18 @@ def test_build_user_prompt_session_context():
         session_topic="Intelligent Operations",
         session_date="24 April 2026",
     )
-    assert "CONTEXTE" in prompt
+    assert "CONTEXT" in prompt
     assert "Intelligent Operations" in prompt
     assert "24 April 2026" in prompt
 
-    # No CONTEXTE block when both are empty
+    # No CONTEXT block when both are empty
     prompt2 = _build_user_prompt(
         recap={"elevator_pitch": "test"},
         transcript="some text",
         instructions=None,
         current_deck_spec=None,
     )
-    assert "CONTEXTE" not in prompt2
+    assert "CONTEXT" not in prompt2
 
 
 def test_structural_qa_handles_null_title():
@@ -901,4 +901,124 @@ def test_parse_visual_qa_response_blocking_issues():
     assert result["passed"] is False
     assert len(result["issues"]) == 2
     assert len(result["warnings"]) == 1
-    assert result["summary"] == "2 blocking issues found."
+
+
+def test_export_pptx_returns_qa_result_dict(tmp_db, tmp_path):
+    """export_pptx returns a dict with passed, attempts, structural_issues, visual_issues, warnings, summary."""
+    import asyncio, json
+    import unittest.mock as mock
+    import export as exp
+
+    sid = "qa-loop-001"
+    spec = {"schema_version": 1, "slides": [
+        {"layout": "cover",   "slots": {"title": "The market shifts now", "date": "2026-04-25", "duration": "60m"}},
+        {"layout": "bullets", "slots": {"title": "The orchestrator wins", "bullets": ["A", "B"]}},
+        {"layout": "cards-3", "slots": {"title": "Three value dimensions", "cards": [
+            {"heading": "A", "content": "a"},
+            {"heading": "B", "content": "b"},
+            {"heading": "C", "content": "c"},
+        ]}},
+    ]}
+
+    async def setup():
+        await db._db.execute(
+            "INSERT INTO sessions (id, topic, created_at) VALUES (?, ?, ?)",
+            (sid, "IOPS", 1000.0),
+        )
+        await db._db.execute(
+            "INSERT INTO recaps (session_id, recap_json, model, created_at) VALUES (?, ?, ?, ?)",
+            (sid, json.dumps({"elevator_pitch": "test"}), "test", 1000.0),
+        )
+        await db._db.execute(
+            "INSERT INTO segments (session_id, seq, text, timestamp) VALUES (?, ?, ?, ?)",
+            (sid, 1, "Some transcript text", 1000.0),
+        )
+        await db._db.commit()
+
+    asyncio.run(setup())
+
+    output = str(tmp_path / "out.pptx")
+    chain = [{"provider": "test", "model": "m"}]
+
+    async def fake_generate(*args, **kwargs):
+        return spec
+
+    qa_pass = {"passed": True, "issues": [], "warnings": [], "summary": "Looks good."}
+
+    with mock.patch.object(exp, "generate_deck_spec", fake_generate), \
+         mock.patch.object(exp, "_visual_qa", return_value=qa_pass):
+        result = asyncio.run(exp.export_pptx(sid, output, db_path=tmp_db, chain=chain))
+
+    assert isinstance(result, dict)
+    assert "passed" in result
+    assert "attempts" in result
+    assert "structural_issues" in result
+    assert "visual_issues" in result
+    assert "warnings" in result
+    assert "summary" in result
+    assert result["passed"] is True
+    assert result["attempts"] == 1
+
+
+def test_export_pptx_retries_on_visual_qa_failure(tmp_db, tmp_path):
+    """export_pptx retries once when visual QA fails, succeeds on second attempt."""
+    import asyncio, json
+    import unittest.mock as mock
+    import export as exp
+
+    sid = "qa-loop-002"
+    spec = {"schema_version": 1, "slides": [
+        {"layout": "cover",   "slots": {"title": "The market shifts now", "date": "2026-04-25", "duration": "60m"}},
+        {"layout": "bullets", "slots": {"title": "The orchestrator wins", "bullets": ["A", "B"]}},
+        {"layout": "cards-3", "slots": {"title": "Three value dimensions", "cards": [
+            {"heading": "A", "content": "a"},
+            {"heading": "B", "content": "b"},
+            {"heading": "C", "content": "c"},
+        ]}},
+    ]}
+    call_counts = {"generate": 0, "visual": 0}
+
+    async def setup():
+        await db._db.execute(
+            "INSERT INTO sessions (id, topic, created_at) VALUES (?, ?, ?)",
+            (sid, "IOPS", 1001.0),
+        )
+        await db._db.execute(
+            "INSERT INTO recaps (session_id, recap_json, model, created_at) VALUES (?, ?, ?, ?)",
+            (sid, json.dumps({"elevator_pitch": "test"}), "test", 1001.0),
+        )
+        await db._db.execute(
+            "INSERT INTO segments (session_id, seq, text, timestamp) VALUES (?, ?, ?, ?)",
+            (sid, 1, "Some transcript text", 1001.0),
+        )
+        await db._db.commit()
+
+    asyncio.run(setup())
+
+    output = str(tmp_path / "out2.pptx")
+    chain = [{"provider": "test", "model": "m"}]
+
+    async def fake_generate(*args, **kwargs):
+        call_counts["generate"] += 1
+        return spec
+
+    qa_fail = {
+        "passed": False,
+        "issues": [{"slide": 2, "category": "visual", "severity": "blocking", "description": "text overflow"}],
+        "warnings": [], "summary": "1 blocking issue.",
+    }
+    qa_pass = {"passed": True, "issues": [], "warnings": [], "summary": "Fixed."}
+
+    async def fake_visual(*args, **kwargs):
+        call_counts["visual"] += 1
+        return qa_fail if call_counts["visual"] == 1 else qa_pass
+
+    with mock.patch.object(exp, "generate_deck_spec", fake_generate), \
+         mock.patch.object(exp, "_visual_qa", fake_visual):
+        result = asyncio.run(exp.export_pptx(sid, output, db_path=tmp_db, chain=chain))
+
+    assert result["passed"] is True
+    assert result["attempts"] == 2
+    assert call_counts["generate"] == 2
+    assert call_counts["visual"] == 2
+    assert result["summary"] == "Fixed."

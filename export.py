@@ -1331,34 +1331,85 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
     corpus_block = _format_corpus_for_slides(corpus_docs)
 
     topic = session.get("topic", "Untitled")
-    logger.info(f"PPTX export: session={session_id[:8]}… topic='{topic}' "
-          f"transcript={len(transcript)} chars instructions={'yes' if instructions else 'no'} "
-          f"deck_spec={'update' if current_deck_spec else 'new'} "
-          f"corpus={len(corpus_docs)} chunks")
-
     try:
         session_date = datetime.fromtimestamp(float(session.get("created_at", 0))).strftime("%d %B %Y")
     except Exception:
         session_date = ""
 
-    # Generate deck_spec via LLM
-    deck_spec = await generate_deck_spec(
-        transcript=transcript,
-        recap=recap,
-        instructions=instructions,
-        current_deck_spec=current_deck_spec,
-        chain=chain,
-        session_topic=topic,
-        session_date=session_date,
-        corpus_block=corpus_block,
+    logger.info(
+        f"PPTX export: session={session_id[:8]}… topic='{topic}' "
+        f"transcript={len(transcript)} chars instructions={'yes' if instructions else 'no'} "
+        f"deck_spec={'update' if current_deck_spec else 'new'} "
+        f"corpus={len(corpus_docs)} chunks"
     )
 
-    # Persist deck_spec
-    served_model = chain[0]["model"]
-    await db.save_deck_spec(session_id, deck_spec, served_model)
+    qa_result = {
+        "passed": False,
+        "attempts": 0,
+        "structural_issues": [],
+        "visual_issues": [],
+        "warnings": [],
+        "summary": "",
+    }
+    qa_feedback = ""
+    last_deck_spec = None
 
-    # Assemble PPTX
-    _assemble_pptx(deck_spec, output)
+    for attempt in range(3):
+        qa_result["attempts"] = attempt + 1
+
+        last_deck_spec = await generate_deck_spec(
+            transcript=transcript,
+            recap=recap,
+            instructions=instructions,
+            current_deck_spec=current_deck_spec,
+            chain=chain,
+            session_topic=topic,
+            session_date=session_date,
+            corpus_block=corpus_block,
+            qa_feedback=qa_feedback,
+        )
+
+        # Step 1: Structural QA (no I/O, instant)
+        s_qa = _structural_qa(last_deck_spec)
+        qa_result["structural_issues"] = s_qa["issues"]
+
+        if not s_qa["passed"] and attempt < 2:
+            qa_feedback = _format_qa_feedback(s_qa["issues"], [])
+            logger.warning(
+                f"export_pptx: structural QA failed (attempt {attempt + 1}): {s_qa['issues']}"
+            )
+            continue  # retry without assembling
+
+        # Step 2: Assemble (even on last attempt if structural still failing)
+        _assemble_pptx(last_deck_spec, output)
+
+        # Step 3: Visual QA
+        v_qa = await _visual_qa(output, last_deck_spec, session_topic=topic)
+        blocking = v_qa.get("issues", [])
+        qa_result["visual_issues"] = [i["description"] for i in blocking]
+        qa_result["warnings"] = [i["description"] for i in v_qa.get("warnings", [])]
+        qa_result["summary"] = v_qa.get("summary", "")
+
+        if not blocking:
+            qa_result["passed"] = True
+            break
+
+        if attempt < 2:
+            qa_feedback = _format_qa_feedback([], blocking)
+            logger.warning(
+                f"export_pptx: visual QA failed (attempt {attempt + 1}): "
+                f"{[i['description'] for i in blocking]}"
+            )
+        else:
+            logger.warning(
+                f"export_pptx: QA exhausted after {attempt + 1} attempts, "
+                f"saving with {len(blocking)} unresolved blocking issues"
+            )
+
+    served_model = chain[0]["model"]
+    await db.save_deck_spec(session_id, last_deck_spec, served_model)
+
+    return qa_result
 
 
 # ─── CLI ───

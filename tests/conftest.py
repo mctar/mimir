@@ -15,7 +15,11 @@ async def tmp_db(tmp_path):
                 content      TEXT NOT NULL,
                 content_hash TEXT NOT NULL UNIQUE,
                 created_at   REAL NOT NULL,
-                active       INTEGER NOT NULL DEFAULT 1
+                active       INTEGER NOT NULL DEFAULT 1,
+                label        TEXT,
+                role         TEXT,
+                key_messages TEXT,
+                usages       TEXT
             )
         """)
         await db.commit()
