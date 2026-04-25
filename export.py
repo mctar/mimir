@@ -14,7 +14,7 @@ Prerequisites:
     pip install playwright && playwright install chromium
 """
 
-import argparse, asyncio, base64, json, os, re, subprocess, sys, tempfile
+import argparse, asyncio, json, os, re, subprocess, sys, tempfile
 from datetime import datetime
 
 from log import logger
@@ -940,11 +940,12 @@ def _soffice_path() -> str | None:
 
 
 def _png_slide_index(path: str) -> int:
+    """Return the trailing integer from a PNG filename for numeric sort ordering."""
     m = re.search(r"(\d+)\.png$", path)
     return int(m.group(1)) if m else 0
 
 
-def _pptx_to_thumbnails(pptx_path: str, tmpdir: str) -> list:
+def _pptx_to_thumbnails(pptx_path: str, tmpdir: str) -> list[str]:
     """Convert a .pptx to per-slide PNG thumbnails via LibreOffice headless.
 
     Returns sorted list of PNG paths. Returns [] if soffice is unavailable or fails.
