@@ -875,7 +875,6 @@ _LAYOUT_CATALOG_STR = "\n".join(
 
 def _structural_qa(deck_spec: dict) -> dict:
     """Check deck_spec structure before assembly. Returns {"passed": bool, "issues": list[str]}."""
-    import re
     issues = []
     slides = deck_spec.get("slides", [])
 
@@ -899,7 +898,7 @@ def _structural_qa(deck_spec: dict) -> dict:
     bad_titles = [
         f"Slide {i + 1}: \"{s.get('slots', {}).get('title', '')}\""
         for i, s in enumerate(slides)
-        if gerundive.match(s.get("slots", {}).get("title", ""))
+        if gerundive.match(s.get("slots", {}).get("title") or "")
     ]
     if len(bad_titles) > 2:
         issues.append(

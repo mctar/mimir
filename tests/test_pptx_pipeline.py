@@ -719,3 +719,14 @@ def test_build_user_prompt_session_context():
         current_deck_spec=None,
     )
     assert "CONTEXTE" not in prompt2
+
+
+def test_structural_qa_handles_null_title():
+    from export import _structural_qa
+    deck_spec = {"slides": [
+        {"layout": "cover",   "slots": {"title": None}},
+        {"layout": "bullets", "slots": {"title": "The orchestrator model wins"}},
+        {"layout": "cards-3", "slots": {"title": "Three value dimensions"}},
+    ]}
+    result = _structural_qa(deck_spec)
+    assert result["passed"] is True  # None title should not crash or trigger gerundive
