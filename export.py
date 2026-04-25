@@ -29,6 +29,7 @@ from prompts.slides import HTML_SLIDES_SYSTEM, deck_spec_system
 ANTHROPIC_API_KEY    = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_BASE_URL   = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 ANTHROPIC_AUTH_TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+_QA_MODEL = "claude-haiku-4-5-20251001"
 HUGIN_BASE_URL       = os.environ.get("HUGIN_BASE_URL", "https://munin.btrbot.com")
 HUGIN_CF_ID          = os.environ.get("HUGIN_CF_ID", "")
 HUGIN_CF_SECRET      = os.environ.get("HUGIN_CF_SECRET", "")
@@ -1039,7 +1040,7 @@ def _parse_visual_qa_response(raw: str) -> dict:
 
 async def _visual_qa(
     pptx_path: str,
-    deck_spec: dict,
+    deck_spec: dict,  # deck_spec: reserved for future deck-aware QA
     session_topic: str = "",
 ) -> dict:
     """Run visual QA on a .pptx via LibreOffice thumbnails + Claude Haiku vision.
@@ -1098,15 +1099,16 @@ async def _visual_qa(
             headers["x-api-key"] = ANTHROPIC_API_KEY
 
         body = {
-            "model": "claude-haiku-4-5-20251001",
+            "model": _QA_MODEL,
             "max_tokens": 1024,
             "messages": [{"role": "user", "content": content}],
         }
 
         timeout = aiohttp.ClientTimeout(total=120)
+        raw = ""
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
+            async with aiohttp.ClientSession() as s:
+                async with s.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
                     if r.status != 200:
                         text = await r.text()
                         logger.error(f"_visual_qa: API error {r.status}: {text[:200]}")
