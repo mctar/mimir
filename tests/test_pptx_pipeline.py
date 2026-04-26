@@ -575,7 +575,7 @@ def test_format_recap_unknown_keys():
 
 
 def test_build_user_prompt_instructions_first():
-    """Instructions block appears before RÉCAP block in the prompt."""
+    """Instructions block appears before RECAP block in the prompt."""
     from export import _build_user_prompt
 
     prompt = _build_user_prompt(
@@ -585,11 +585,11 @@ def test_build_user_prompt_instructions_first():
         current_deck_spec=None,
     )
     instructions_pos = prompt.find("INSTRUCTIONS")
-    recap_pos = prompt.find("RÉCAP")
+    recap_pos = prompt.find("RECAP")
     assert instructions_pos >= 0, "INSTRUCTIONS block missing"
-    assert recap_pos >= 0, "RÉCAP block missing"
-    assert instructions_pos < recap_pos, "INSTRUCTIONS must come before RÉCAP"
-    assert "TOUTES les slides" in prompt
+    assert recap_pos >= 0, "RECAP block missing"
+    assert instructions_pos < recap_pos, "INSTRUCTIONS must come before RECAP"
+    assert "ALL slides" in prompt
     assert "Translate everything to English" in prompt
 
 
@@ -604,7 +604,7 @@ def test_build_user_prompt_no_instructions():
         current_deck_spec=None,
     )
     assert "INSTRUCTIONS" not in prompt
-    assert "RÉCAP" in prompt
+    assert "RECAP" in prompt
 
     prompt2 = _build_user_prompt(
         recap={"elevator_pitch": "test"},
@@ -638,7 +638,7 @@ def test_assemble_divider_layout(tmp_path):
 
 
 def test_build_user_prompt_session_context():
-    """CONTEXTE block appears when session_topic or session_date is provided."""
+    """CONTEXT block appears when session_topic or session_date is provided."""
     from export import _build_user_prompt
 
     prompt = _build_user_prompt(
@@ -649,15 +649,15 @@ def test_build_user_prompt_session_context():
         session_topic="Intelligent Operations",
         session_date="24 April 2026",
     )
-    assert "CONTEXTE" in prompt
+    assert "CONTEXT" in prompt
     assert "Intelligent Operations" in prompt
     assert "24 April 2026" in prompt
 
-    # No CONTEXTE block when both are empty
+    # No CONTEXT block when both are empty
     prompt2 = _build_user_prompt(
         recap={"elevator_pitch": "test"},
         transcript="some text",
         instructions=None,
         current_deck_spec=None,
     )
-    assert "CONTEXTE" not in prompt2
+    assert "CONTEXT" not in prompt2
