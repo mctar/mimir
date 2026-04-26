@@ -41,3 +41,6 @@ docs/design/
 
 # Claude Code
 .claude/
+
+# Superpowers
+.superpowers/

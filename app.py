@@ -5,7 +5,7 @@ Real-time conversation visualization. Receives audio from browser,
 dispatches to STT, proxies LLM calls, manages graph reconciliation.
 """
 
-import asyncio, json, time, threading, queue, argparse, os, uuid, base64
+import asyncio, json, time, threading, queue, argparse, os, uuid, base64, re
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 
@@ -498,6 +498,42 @@ app = FastAPI(lifespan=lifespan)
 WS_PORT = 8765
 
 
+# ─── Transcript import helpers ──────────────────────────────────────────────
+
+def _parse_transcript(raw: str) -> str:
+    """Return clean text from a plain-text or WebVTT transcript string."""
+    stripped = raw.strip()
+    is_vtt = stripped.startswith("WEBVTT") or bool(
+        re.search(r"\d{2}:\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}:\d{2}\.\d{3}", stripped)
+    )
+    if not is_vtt:
+        return stripped
+    lines = []
+    for line in stripped.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith(("WEBVTT", "NOTE", "STYLE")):
+            continue
+        if re.match(r"\d{2}:\d{2}:\d{2}\.\d{3} --> \d{2}:\d{2}:\d{2}\.\d{3}", line):
+            continue
+        if re.match(r"^\d+$", line):
+            continue
+        line = re.sub(r"<v[^>]+>", "", line).strip()
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
+
+
+def _split_segments(text: str) -> list[str]:
+    """Split transcript text into segments, preferring paragraph breaks."""
+    parts = [p.strip() for p in re.split(r"\n{2,}", text)]
+    parts = [p for p in parts if p]
+    if len(parts) <= 1:
+        parts = [line.strip() for line in text.splitlines() if line.strip()]
+    return parts
+
+
 # ─── Static serving ───
 @app.get("/mimir-favicon.svg")
 async def serve_favicon():
@@ -589,6 +625,61 @@ async def unarchive_sessions(request: Request):
         return JSONResponse({"error": "No session IDs provided"}, status_code=400)
     await db.unarchive_sessions(session_ids)
     return JSONResponse({"ok": True, "unarchived": len(session_ids)})
+
+
+@app.post("/v1/sessions/import")
+async def import_transcript(request: Request):
+    """Create a new session from an externally-provided transcript (plain text or VTT)."""
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+    topic = (body.get("topic") or "").strip()
+    date_str = (body.get("date") or "").strip()
+    raw = (body.get("transcript") or "").strip()
+
+    if not topic:
+        return JSONResponse({"error": "topic is required"}, status_code=400)
+    if not raw:
+        return JSONResponse({"error": "transcript is required"}, status_code=400)
+    if len(raw) > 5_000_000:
+        return JSONResponse({"error": "Transcript exceeds 5 MB limit"}, status_code=400)
+
+    cleaned = _parse_transcript(raw)
+    if not cleaned:
+        return JSONResponse({"error": "Transcript is empty after parsing"}, status_code=400)
+
+    base_ts = time.time()
+    if date_str:
+        try:
+            from datetime import datetime as _dt
+            base_ts = _dt.fromisoformat(date_str).timestamp()
+        except ValueError:
+            return JSONResponse(
+                {"error": f"Invalid date: {date_str!r} — use ISO 8601 (e.g. 2026-04-24)"},
+                status_code=400,
+            )
+
+    parts = _split_segments(cleaned)
+    session_id = str(uuid.uuid4())[:8]
+    await db.create_session(session_id, topic, source="external")
+    await db.end_session(session_id)
+
+    for seq, text in enumerate(parts, start=1):
+        await db.store_segment(
+            session_id=session_id,
+            seq=seq,
+            text=text,
+            is_partial=False,
+            timestamp=base_ts + seq - 1,
+            stt_backend="external",
+            stt_language="",
+        )
+
+    logger.info(
+        f"import_transcript: session={session_id} topic={topic!r} segments={len(parts)}"
+    )
+    return JSONResponse({"session_id": session_id, "segments": len(parts)})
 
 
 @app.post("/v1/sessions")

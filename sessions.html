@@ -165,6 +165,7 @@ h1 {
 .badge-none { border-color: var(--bdr); color: var(--dim); }
 .badge-active { border-color: var(--amber); color: var(--amber); }
 .badge-replay { border-color: var(--cyan, #5af); color: var(--cyan, #5af); }
+.badge-external { border-color: var(--purple); color: var(--purple); }
 .empty-state {
   text-align: center;
   padding: 80px 20px;
@@ -1332,6 +1333,36 @@ h1 {
 @media (max-width: 900px) {
   .v3-framework { grid-template-columns: 1fr; }
 }
+
+/* ─── Import Transcript Modal ─────────────────────────────────────── */
+.import-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+  z-index: 100; display: flex; align-items: center; justify-content: center;
+}
+.import-modal {
+  background: var(--panel); border: 1px solid var(--bdr); border-radius: 8px;
+  padding: 1.75rem; width: min(640px, 92vw); display: flex; flex-direction: column; gap: 1.1rem;
+}
+.import-modal h2 { margin: 0; font-size: 1rem; color: var(--bright); }
+.import-field label { font-size: 11px; color: var(--dim); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+.import-field input[type=text],
+.import-field input[type=date] {
+  width: 100%; background: var(--bg); border: 1px solid var(--bdr); color: var(--txt);
+  padding: 6px 10px; border-radius: 4px; font-size: 13px;
+}
+.import-drop-zone {
+  border: 2px dashed var(--bdr); border-radius: 6px; padding: 0.75rem 1rem;
+  text-align: center; font-size: 12px; color: var(--dim); cursor: pointer;
+  transition: border-color 0.15s; margin-bottom: 0.5rem;
+}
+.import-drop-zone.drag-over { border-color: var(--green); color: var(--green); }
+.import-textarea {
+  width: 100%; height: 200px; background: var(--bg); border: 1px solid var(--bdr);
+  color: var(--txt); padding: 8px 10px; border-radius: 4px;
+  font-size: 12px; font-family: 'Ubuntu Mono', monospace; resize: vertical;
+}
+.import-actions { display: flex; gap: 0.5rem; justify-content: flex-end; align-items: center; }
+.import-error { color: var(--rose); font-size: 12px; flex: 1; }
 </style>
 </head>
 <body>
@@ -1349,6 +1380,9 @@ h1 {
 <!-- ═══ List View ═══ -->
 <div id="list-view">
   <h1 id="page-title">Sessions</h1>
+  <div style="display:flex;justify-content:flex-end;margin-bottom:0.75rem;">
+    <button class="btn btn-ghost" onclick="openImportModal()">Import Transcript</button>
+  </div>
 
   <!-- Synthesis section -->
   <div id="synth-section" class="synth-section" style="display:none;"></div>
@@ -1377,6 +1411,40 @@ h1 {
   <button class="btn" id="btn-archive" onclick="archiveSelected()">Archive</button>
   <button class="btn" onclick="clearSelection()">Clear</button>
   <span id="synth-warning" style="color:var(--amber);font-size:10px;"></span>
+</div>
+
+<!-- ═══ Import Transcript Modal ═══ -->
+<div id="import-overlay" class="import-overlay" style="display:none;"
+     onclick="if(event.target===this)closeImportModal()">
+  <div class="import-modal">
+    <h2>Import External Transcript</h2>
+    <div class="import-field">
+      <label for="import-topic">Topic *</label>
+      <input type="text" id="import-topic" placeholder="e.g. Day 1 IO — Strategy Offsite"
+             oninput="updateImportBtn()">
+    </div>
+    <div class="import-field">
+      <label for="import-date">Date</label>
+      <input type="date" id="import-date">
+    </div>
+    <div class="import-field">
+      <label>Transcript *</label>
+      <div class="import-drop-zone" id="import-drop-zone"
+           onclick="document.getElementById('import-file').click()">
+        Drop a .txt or .vtt file here, or click to browse
+        <input type="file" id="import-file" accept=".txt,.vtt" style="display:none"
+               onchange="onImportFile(this)">
+      </div>
+      <textarea class="import-textarea" id="import-textarea"
+                placeholder="Or paste transcript text here…"
+                oninput="updateImportBtn()"></textarea>
+    </div>
+    <div class="import-actions">
+      <span class="import-error" id="import-error"></span>
+      <button class="btn btn-ghost" onclick="closeImportModal()">Cancel</button>
+      <button class="btn" id="btn-import-submit" onclick="submitImport()" disabled>Import</button>
+    </div>
+  </div>
 </div>
 
 <!-- ═══ Detail View ═══ -->
@@ -1583,6 +1651,7 @@ function renderList() {
   tbody.innerHTML = sessions.map(s => {
     const topic = s.topic || 'Untitled';
     const replayBadge = s.source === 'replay' ? ' <span class="badge badge-replay">replay</span>' : '';
+    const externalBadge = s.source === 'external' ? ' <span class="badge badge-external">external</span>' : '';
     const date = fmtDate(s.created_at);
     const dur = s.ended_at ? fmtDuration(s.ended_at - s.created_at) : '<span class="badge badge-active">active</span>';
     const segs = s.segment_count || 0;
@@ -1590,7 +1659,7 @@ function renderList() {
     const checked = selectedSessions.has(s.id) ? 'checked' : '';
     return `<tr class="clickable">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="sel-cb" data-id="${s.id}" data-has-recap="${s.has_recap ? 1 : 0}" ${checked} onchange="onSessionSelect()"></td>
-      <td class="session-topic" onclick="openSession('${s.id}')">${esc(topic)}${replayBadge}</td>
+      <td class="session-topic" onclick="openSession('${s.id}')">${esc(topic)}${replayBadge}${externalBadge}</td>
       <td class="session-date" onclick="openSession('${s.id}')">${date}</td>
       <td onclick="openSession('${s.id}')">${dur}</td>
       <td onclick="openSession('${s.id}')">${segs}</td>
@@ -3850,6 +3919,104 @@ function esc(str) {
   const el = document.createElement('span');
   el.textContent = str;
   return el.innerHTML;
+}
+
+// ─── Import Transcript Modal ──────────────────────────────────────────────
+
+function openImportModal() {
+  document.getElementById('import-date').value = new Date().toISOString().split('T')[0];
+  document.getElementById('import-topic').value = '';
+  document.getElementById('import-textarea').value = '';
+  document.getElementById('import-error').textContent = '';
+  document.getElementById('btn-import-submit').disabled = true;
+  document.getElementById('import-overlay').style.display = 'flex';
+  document.getElementById('import-topic').focus();
+}
+
+function closeImportModal() {
+  document.getElementById('import-overlay').style.display = 'none';
+}
+
+function updateImportBtn() {
+  const ok = document.getElementById('import-topic').value.trim() &&
+             document.getElementById('import-textarea').value.trim();
+  document.getElementById('btn-import-submit').disabled = !ok;
+}
+
+function onImportFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('import-textarea').value = e.target.result;
+    updateImportBtn();
+  };
+  reader.readAsText(file, 'utf-8');
+  input.value = '';
+}
+
+(function setupImportDrop() {
+  const zone = document.getElementById('import-drop-zone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      document.getElementById('import-textarea').value = ev.target.result;
+      updateImportBtn();
+    };
+    reader.readAsText(file, 'utf-8');
+  });
+})();
+
+async function submitImport() {
+  const topic = document.getElementById('import-topic').value.trim();
+  const date  = document.getElementById('import-date').value;
+  const transcript = document.getElementById('import-textarea').value.trim();
+  const errEl = document.getElementById('import-error');
+  const btn   = document.getElementById('btn-import-submit');
+
+  errEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Importing…';
+
+  try {
+    const resp = await fetch('/v1/sessions/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic, date, transcript }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errEl.textContent = data.error || 'Import failed';
+      btn.disabled = false;
+      btn.textContent = 'Import';
+      return;
+    }
+    closeImportModal();
+    await loadSessions();
+    // Briefly highlight the new session row
+    const newId = data.session_id;
+    setTimeout(() => {
+      for (const row of document.querySelectorAll('#session-list tr')) {
+        if (row.textContent.includes(newId)) {
+          row.style.transition = 'background 0.4s';
+          row.style.background = 'rgba(113,96,158,0.18)';
+          setTimeout(() => { row.style.background = ''; }, 2200);
+          break;
+        }
+      }
+    }, 80);
+    toast(`Imported "${topic}" — ${data.segments} segments`);
+  } catch (e) {
+    errEl.textContent = String(e);
+    btn.disabled = false;
+    btn.textContent = 'Import';
+  }
 }
 
 function toast(msg, isError) {

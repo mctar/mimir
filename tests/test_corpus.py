@@ -13,16 +13,12 @@ async def test_store_and_list(tmp_db):
 
 
 @pytest.mark.asyncio
-async def test_duplicate_content_silently_deduplicates(tmp_db):
-    first_id = await corpus.store_doc(tmp_db, "Doc A", "a.txt", "hello world")
-    # store_doc uses INSERT OR IGNORE: duplicate content hash raises no exception
-    # and SQLite returns the existing row's id via lastrowid
-    second_id = await corpus.store_doc(tmp_db, "Doc A2", "a2.txt", "hello world")
-    assert second_id == first_id
-    # Only the first document should exist in the store
+async def test_duplicate_content_ignored(tmp_db):
+    await corpus.store_doc(tmp_db, "Doc A", "a.txt", "hello world", label="v1")
+    await corpus.store_doc(tmp_db, "Doc A2", "a2.txt", "hello world", label="v2")
     docs = await corpus.list_docs(tmp_db)
-    assert len(docs) == 1
-    assert docs[0]["title"] == "Doc A"
+    assert len(docs) == 1, "duplicate content must not create a second row"
+    assert docs[0]["label"] == "v2", "metadata should be updated on re-store"
 
 
 @pytest.mark.asyncio
