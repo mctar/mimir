@@ -171,7 +171,7 @@ async def close_db():
 
 
 async def create_session(session_id: str, topic: str = "", source: str = "live") -> dict:
-    """Create a new session. source: 'live' or 'replay'. Returns session dict."""
+    """Create a new session. source: 'live', 'replay', or 'external'. Returns session dict."""
     now = time.time()
     await _db.execute(
         "INSERT INTO sessions (id, topic, created_at, source) VALUES (?, ?, ?, ?)",

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from prompts.utils import GEB_ASE_IOPS_CONTEXT
 
-HTML_SLIDES_SYSTEM = """\
+HTML_SLIDES_SYSTEM = f"""\
 You are an expert presentation designer. Create complete, beautiful HTML slide decks.
+Programme context: {GEB_ASE_IOPS_CONTEXT}
 
 RULES (non-negotiable):
 - Output ONLY raw HTML. No markdown fences, no explanation, nothing else.
@@ -23,6 +25,7 @@ RULES (non-negotiable):
 def deck_spec_system(layout_catalog_str: str) -> str:
     return f"""\
 You are an expert presentation designer for executive audiences.
+Programme context: {GEB_ASE_IOPS_CONTEXT}
 Generate or update a slide deck in strict JSON format.
 
 AVAILABLE LAYOUTS:

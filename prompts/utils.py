@@ -1,6 +1,13 @@
 from __future__ import annotations
 
 
+GEB_ASE_IOPS_CONTEXT = (
+    '"GEB ASE IOPS" stands for Group Executive Board – Accelerator Solution Environment – '
+    "Intelligent Operations. This is a Capgemini executive programme at GEB level, "
+    "focused on defining and activating the Intelligent Operations (IOPS) offer strategy."
+)
+
+
 def transcript_cleaner_system(lang_name: str) -> str:
     return f"""You are a transcript cleaner. You receive raw speech-to-text segments and fix obvious transcription errors.
 
@@ -21,6 +28,7 @@ Rules:
 def qa_assistant_system(has_corpus: bool) -> str:
     return (
         "Tu es un assistant d'analyse de session. "
+        f"Contexte : {GEB_ASE_IOPS_CONTEXT} "
         "Réponds de façon concise aux questions basées sur le transcript"
         + (" et les documents de référence fournis." if has_corpus else " fourni.")
         + " Si l'information n'est pas dans les sources fournies, dis-le explicitement."
@@ -32,6 +40,8 @@ VOCABULARY_HINTS = (
     # Marques & entités
     "Capgemini, Capgemini Invent, WNS, Kipi.ai, McKinsey, HFS, Forrester, IDC, ISG, "
     "Microsoft, Google, AWS, Mistral AI, NVIDIA, Euronext, NYSE, "
+    # Programme
+    "GEB ASE IOPS, ASE, Accelerator Solution Environment, Group Executive Board, "
     # Concepts stratégiques IO
     "Intelligent Operations, IOPS, Agentic AI, Agentic operations, BPO, BPS, "
     "Digital BPS, hyper-automation, Transform-then-Run, outcome-based, outcomes-based, "
@@ -57,7 +67,8 @@ VOCABULARY_HINTS = (
 )
 
 WHISPER_DEFAULT_PROMPT = (
-    "Capgemini Invent Day 1 strategic working session on Intelligent Operations (IOPS). "
+    "GEB ASE IOPS (Group Executive Board – Accelerator Solution Environment – Intelligent Operations): "
+    "Capgemini executive programme, Day 1 strategic working session on Intelligent Operations (IOPS). "
     "Agenda: align on positioning (what to sell, why now, why well-positioned, to whom) "
     "and value proposition (what we do, how we do it, how we get paid). "
     "Key topics: Transform-and-Run, Value game step-up, Asset/IP-led services, "
