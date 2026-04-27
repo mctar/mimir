@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from prompts.utils import GEB_ASE_IOPS_CONTEXT
+
 
 def mindmap_system(max_nodes: int, topic: str | None) -> str:
     topic_line = f'- Meeting context: "{topic}"' if topic else ""
     return f"""You generate mind-map graphs from meeting transcripts. Return ONLY valid JSON.
+
+Programme context: {GEB_ASE_IOPS_CONTEXT}
 
 Rules:
 - Max {max_nodes} nodes. Merge lesser concepts to stay under limit.
