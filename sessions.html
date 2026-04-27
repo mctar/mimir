@@ -36,11 +36,13 @@
   --capgemini-gradient: linear-gradient(90deg, #121A38 0%, #0058AB 30%, #1DB8F2 70%, #00D5D0 100%);
   /* Semantic aliases */
   --green: #1DB8F2;
+  --yellow: #d29922;
   --amber: #FEB100;
   --rose: #FF816E;
   --purple: #71609E;
   --blue: #0058AB;
   --cyan: #00D5D0;
+  --red: #f85149;
 }
 
 body {
@@ -1506,6 +1508,7 @@ h1 {
         <button class="btn btn-primary" onclick="generatePptx(event)" id="btn-regen-pptx">Regénérer PPTX</button>
         <button class="btn btn-ghost" onclick="downloadPptx()" id="btn-dl-pptx">Télécharger</button>
       </div>
+      <div id="pptx-qa-result" style="display:none; margin-top:.75rem; font-size:.82rem; color:var(--dim);"></div>
     </div>
 
     <div id="pptx-no-deck" style="margin-top:.5rem;">
@@ -3426,6 +3429,8 @@ async function generatePptx(event) {
   const origText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Génération en cours…';
+  const qaResetEl = document.getElementById('pptx-qa-result');
+  if (qaResetEl) qaResetEl.style.display = 'none';
 
   try {
     const startResp = await fetch(`/v1/sessions/${sid}/export/pptx`, {
@@ -3438,12 +3443,13 @@ async function generatePptx(event) {
 
     let status = 'running';
     let attempts = 0;
+    let pollData = null;
     const MAX_ATTEMPTS = 60; // 2.5s * 60 = 2.5 min cap
     while ((status === 'running' || status === 'started') && attempts < MAX_ATTEMPTS) {
       await new Promise(r => setTimeout(r, 2500));
       attempts++;
       const pollResp = await fetch(`/v1/sessions/${sid}/export/pptx/status`);
-      const pollData = await pollResp.json();
+      pollData = await pollResp.json();
       status = pollData.status;
       if (status === 'error') throw new Error(pollData.error || 'Export échoué');
       if (status !== 'running' && status !== 'started' && status !== 'done') {
@@ -3456,6 +3462,29 @@ async function generatePptx(event) {
       // Reload deck_spec from DB (updated by server)
       await loadPptxData();
       document.getElementById('btn-dl-pptx').style.display = 'inline-block';
+
+      const qaEl = document.getElementById('pptx-qa-result');
+      const qa = pollData?.qa;
+      if (qa && qaEl) {
+        const icon = qa.passed ? '✓' : '⚠';
+        const color = qa.passed ? 'var(--green, #3fb950)' : 'var(--yellow, #d29922)';
+        let html = `<span style="color:${color}">${icon} QA (${qa.attempts} attempt${qa.attempts > 1 ? 's' : ''}): ${qa.summary || ''}</span>`;
+        if (qa.visual_issues && qa.visual_issues.length > 0) {
+          html += `<div style="margin:.3rem 0 0 0; color:var(--red, #f85149);">Blocking issues:</div>`;
+          html += `<ul style="margin:.1rem 0 0 1rem; padding:0;">` +
+            qa.visual_issues.map(i => `<li>${i}</li>`).join('') +
+            `</ul>`;
+        }
+        if (qa.warnings && qa.warnings.length > 0) {
+          html += `<div style="margin:.3rem 0 0 0; color:var(--dim);">Warnings:</div>`;
+          html += `<ul style="margin:.1rem 0 0 1rem; padding:0;">` +
+            qa.warnings.map(w => `<li>${w}</li>`).join('') +
+            `</ul>`;
+        }
+        qaEl.innerHTML = html;
+        qaEl.style.display = 'block';
+      }
+
       toast('PPTX généré');
     }
   } catch(e) {

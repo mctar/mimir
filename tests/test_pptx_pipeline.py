@@ -196,6 +196,64 @@ def test_generate_deck_spec_parses_valid_json():
     assert result["slides"][0]["layout"] == "cover"
 
 
+def test_structural_qa_passes_valid_deck():
+    from export import _structural_qa
+    deck_spec = {"slides": [
+        {"layout": "cover",        "slots": {"title": "The orchestrator model wins"}},
+        {"layout": "bullets",      "slots": {"title": "The market is shifting now"}},
+        {"layout": "cards-3",      "slots": {"title": "Three pillars of value"}},
+        {"layout": "two-columns",  "slots": {"title": "Delivery unlocks margin"}},
+        {"layout": "divider",      "slots": {"title": "VALUE PROPOSITION"}},
+    ]}
+    result = _structural_qa(deck_spec)
+    assert result["passed"] is True
+    assert result["issues"] == []
+
+
+def test_structural_qa_fails_consecutive_layouts():
+    from export import _structural_qa
+    deck_spec = {"slides": [
+        {"layout": "bullets", "slots": {"title": "A"}},
+        {"layout": "bullets", "slots": {"title": "B"}},
+        {"layout": "bullets", "slots": {"title": "C"}},
+        {"layout": "bullets", "slots": {"title": "D"}},  # 4th consecutive
+    ]}
+    result = _structural_qa(deck_spec)
+    assert result["passed"] is False
+    assert any("consecutive" in issue for issue in result["issues"])
+
+
+def test_structural_qa_fails_gerundive_titles():
+    from export import _structural_qa
+    deck_spec = {"slides": [
+        {"layout": "bullets", "slots": {"title": "Positioning the Org"}},
+        {"layout": "bullets", "slots": {"title": "Building the Model"}},
+        {"layout": "bullets", "slots": {"title": "Delivering Value"}},  # 3rd gerundive
+    ]}
+    result = _structural_qa(deck_spec)
+    assert result["passed"] is False
+    assert any("gerundive" in issue for issue in result["issues"])
+
+
+def test_structural_qa_fails_too_few_slides():
+    from export import _structural_qa
+    deck_spec = {"slides": [
+        {"layout": "cover", "slots": {"title": "T"}},
+        {"layout": "bullets", "slots": {"title": "B"}},
+    ]}
+    result = _structural_qa(deck_spec)
+    assert result["passed"] is False
+    assert any("count" in issue for issue in result["issues"])
+
+
+def test_structural_qa_fails_too_many_slides():
+    from export import _structural_qa
+    slides = [{"layout": "bullets", "slots": {"title": f"Slide {i}"}} for i in range(16)]
+    result = _structural_qa({"slides": slides})
+    assert result["passed"] is False
+    assert any("count" in issue for issue in result["issues"])
+
+
 def test_generate_deck_spec_retries_on_invalid_json():
     """generate_deck_spec réessaie une fois si le JSON est invalide."""
     import export as exp
@@ -661,3 +719,306 @@ def test_build_user_prompt_session_context():
         current_deck_spec=None,
     )
     assert "CONTEXT" not in prompt2
+
+
+def test_structural_qa_handles_null_title():
+    from export import _structural_qa
+    deck_spec = {"slides": [
+        {"layout": "cover",   "slots": {"title": None}},
+        {"layout": "bullets", "slots": {"title": "The orchestrator model wins"}},
+        {"layout": "cards-3", "slots": {"title": "Three value dimensions"}},
+    ]}
+    result = _structural_qa(deck_spec)
+    assert result["passed"] is True  # None title should not crash or trigger gerundive
+
+
+def test_format_qa_feedback_structural_only():
+    from export import _format_qa_feedback
+    result = _format_qa_feedback(
+        structural_issues=["Slide count 2 is outside allowed range 3–15"],
+        visual_blocking=[],
+    )
+    assert "QA FEEDBACK" in result
+    assert "[STRUCTURAL]" in result
+    assert "Slide count 2" in result
+
+
+def test_format_qa_feedback_visual_only():
+    from export import _format_qa_feedback
+    result = _format_qa_feedback(
+        structural_issues=[],
+        visual_blocking=[
+            {"slide": 3, "category": "visual", "severity": "blocking",
+             "description": "text truncated in body zone"},
+        ],
+    )
+    assert "[VISUAL]" in result
+    assert "Slide 3" in result
+    assert "text truncated" in result
+
+
+def test_format_qa_feedback_excludes_warnings():
+    from export import _format_qa_feedback
+    result = _format_qa_feedback(
+        structural_issues=[],
+        visual_blocking=[
+            {"slide": 2, "category": "quality", "severity": "blocking",
+             "description": "gerundive title"},
+            {"slide": 4, "category": "coverage", "severity": "warning",
+             "description": "agenda item not yet covered"},
+        ],
+    )
+    assert "Slide 2" in result
+    assert "Slide 4" not in result  # warnings must not appear
+
+
+def test_generate_deck_spec_includes_qa_feedback():
+    import asyncio, json
+    import unittest.mock as mock
+    import export as exp
+
+    spec = {"schema_version": 1, "slides": [
+        {"layout": "cover", "slots": {"title": "T", "date": "", "duration": ""}},
+        {"layout": "bullets", "slots": {"title": "B", "bullets": []}},
+        {"layout": "cards-3", "slots": {"title": "C", "cards": [
+            {"heading": "A", "content": "a"},
+            {"heading": "B", "content": "b"},
+            {"heading": "C", "content": "c"},
+        ]}},
+    ]}
+    captured = {}
+
+    async def fake_call(tier, system, user):
+        captured["user"] = user
+        return json.dumps(spec)
+
+    with mock.patch.object(exp, "_llm_call_slides", fake_call):
+        asyncio.run(exp.generate_deck_spec(
+            transcript="text",
+            recap={},
+            instructions=None,
+            current_deck_spec=None,
+            chain=[{"provider": "test", "model": "m"}],
+            qa_feedback="QA FEEDBACK from previous generation — fix these issues:\n[VISUAL] Slide 3: text truncated",
+        ))
+
+    assert "QA FEEDBACK" in captured["user"]
+    assert "Slide 3" in captured["user"]
+
+
+def test_format_qa_feedback_empty_returns_empty_string():
+    from export import _format_qa_feedback
+    result = _format_qa_feedback(structural_issues=[], visual_blocking=[])
+    assert result == ""
+
+
+def test_soffice_path_returns_none_when_absent(monkeypatch):
+    import shutil
+    from unittest import mock
+    import export as exp
+
+    monkeypatch.setattr(shutil, "which", lambda _: None)
+    monkeypatch.setattr(os.path, "exists", lambda p: False)
+    result = exp._soffice_path()
+    assert result is None
+
+
+def test_pptx_to_thumbnails_returns_empty_when_no_soffice(monkeypatch):
+    import export as exp
+    monkeypatch.setattr(exp, "_soffice_path", lambda: None)
+    result = exp._pptx_to_thumbnails("/fake/deck.pptx", "/tmp/out")
+    assert result == []
+
+
+def test_pptx_to_thumbnails_sorted_by_slide_number(tmp_path):
+    import export as exp
+
+    # Create fake PNG files with numeric suffixes
+    for name in ["deck3.png", "deck1.png", "deck10.png", "deck2.png"]:
+        (tmp_path / name).write_bytes(b"fake")
+
+    # Patch _soffice_path and subprocess.run to succeed without actually running soffice
+    from unittest import mock
+    with mock.patch.object(exp, "_soffice_path", return_value="/usr/bin/soffice"), \
+         mock.patch("subprocess.run", return_value=mock.Mock(returncode=0)):
+        result = exp._pptx_to_thumbnails("/fake/deck.pptx", str(tmp_path))
+
+    nums = [int(__import__("re").search(r"(\d+)\.png$", p).group(1)) for p in result]
+    assert nums == sorted(nums)
+    assert nums == [1, 2, 3, 10]
+
+
+def test_visual_qa_skips_no_api_key(monkeypatch):
+    import asyncio, export as exp
+    monkeypatch.setattr(exp, "ANTHROPIC_API_KEY", "")
+    monkeypatch.setattr(exp, "ANTHROPIC_AUTH_TOKEN", "")
+    result = asyncio.run(exp._visual_qa("/fake/deck.pptx", {}, "IOPS"))
+    assert result["passed"] is True
+    assert "skipped" in result["summary"].lower()
+
+
+def test_visual_qa_skips_no_soffice(monkeypatch):
+    import asyncio, export as exp
+    monkeypatch.setattr(exp, "ANTHROPIC_API_KEY", "fake-key")
+    monkeypatch.setattr(exp, "ANTHROPIC_AUTH_TOKEN", "")
+    monkeypatch.setattr(exp, "_soffice_path", lambda: None)
+    result = asyncio.run(exp._visual_qa("/fake/deck.pptx", {}, "IOPS"))
+    assert result["passed"] is True
+    assert "skipped" in result["summary"].lower()
+
+
+def test_parse_visual_qa_response_passing():
+    import json
+    from export import _parse_visual_qa_response
+    raw = json.dumps({
+        "passed": True,
+        "issues": [],
+        "summary": "All slides look correct.",
+    })
+    result = _parse_visual_qa_response(raw)
+    assert result["passed"] is True
+    assert result["issues"] == []
+    assert result["warnings"] == []
+    assert result["summary"] == "All slides look correct."
+
+
+def test_parse_visual_qa_response_blocking_issues():
+    import json
+    from export import _parse_visual_qa_response
+    api_json = {
+        "passed": False,
+        "issues": [
+            {"slide": 2, "category": "visual", "severity": "blocking",
+             "description": "text truncated in body placeholder"},
+            {"slide": 4, "category": "template", "severity": "blocking",
+             "description": "white background detected"},
+            {"slide": 5, "category": "coverage", "severity": "warning",
+             "description": "agenda item not yet covered"},
+        ],
+        "summary": "2 blocking issues found.",
+    }
+    result = _parse_visual_qa_response(json.dumps(api_json))
+    assert result["passed"] is False
+    assert len(result["issues"]) == 2
+    assert len(result["warnings"]) == 1
+
+
+def test_export_pptx_returns_qa_result_dict(tmp_db, tmp_path):
+    """export_pptx returns a dict with passed, attempts, structural_issues, visual_issues, warnings, summary."""
+    import asyncio, json
+    import unittest.mock as mock
+    import export as exp
+
+    sid = "qa-loop-001"
+    spec = {"schema_version": 1, "slides": [
+        {"layout": "cover",   "slots": {"title": "The market shifts now", "date": "2026-04-25", "duration": "60m"}},
+        {"layout": "bullets", "slots": {"title": "The orchestrator wins", "bullets": ["A", "B"]}},
+        {"layout": "cards-3", "slots": {"title": "Three value dimensions", "cards": [
+            {"heading": "A", "content": "a"},
+            {"heading": "B", "content": "b"},
+            {"heading": "C", "content": "c"},
+        ]}},
+    ]}
+
+    async def setup():
+        await db._db.execute(
+            "INSERT INTO sessions (id, topic, created_at) VALUES (?, ?, ?)",
+            (sid, "IOPS", 1000.0),
+        )
+        await db._db.execute(
+            "INSERT INTO recaps (session_id, recap_json, model, created_at) VALUES (?, ?, ?, ?)",
+            (sid, json.dumps({"elevator_pitch": "test"}), "test", 1000.0),
+        )
+        await db._db.execute(
+            "INSERT INTO segments (session_id, seq, text, timestamp) VALUES (?, ?, ?, ?)",
+            (sid, 1, "Some transcript text", 1000.0),
+        )
+        await db._db.commit()
+
+    asyncio.run(setup())
+
+    output = str(tmp_path / "out.pptx")
+    chain = [{"provider": "test", "model": "m"}]
+
+    async def fake_generate(*args, **kwargs):
+        return spec
+
+    qa_pass = {"passed": True, "issues": [], "warnings": [], "summary": "Looks good."}
+
+    with mock.patch.object(exp, "generate_deck_spec", fake_generate), \
+         mock.patch.object(exp, "_visual_qa", return_value=qa_pass):
+        result = asyncio.run(exp.export_pptx(sid, output, db_path=tmp_db, chain=chain))
+
+    assert isinstance(result, dict)
+    assert "passed" in result
+    assert "attempts" in result
+    assert "structural_issues" in result
+    assert "visual_issues" in result
+    assert "warnings" in result
+    assert "summary" in result
+    assert result["passed"] is True
+    assert result["attempts"] == 1
+
+
+def test_export_pptx_retries_on_visual_qa_failure(tmp_db, tmp_path):
+    """export_pptx retries once when visual QA fails, succeeds on second attempt."""
+    import asyncio, json
+    import unittest.mock as mock
+    import export as exp
+
+    sid = "qa-loop-002"
+    spec = {"schema_version": 1, "slides": [
+        {"layout": "cover",   "slots": {"title": "The market shifts now", "date": "2026-04-25", "duration": "60m"}},
+        {"layout": "bullets", "slots": {"title": "The orchestrator wins", "bullets": ["A", "B"]}},
+        {"layout": "cards-3", "slots": {"title": "Three value dimensions", "cards": [
+            {"heading": "A", "content": "a"},
+            {"heading": "B", "content": "b"},
+            {"heading": "C", "content": "c"},
+        ]}},
+    ]}
+    call_counts = {"generate": 0, "visual": 0}
+
+    async def setup():
+        await db._db.execute(
+            "INSERT INTO sessions (id, topic, created_at) VALUES (?, ?, ?)",
+            (sid, "IOPS", 1001.0),
+        )
+        await db._db.execute(
+            "INSERT INTO recaps (session_id, recap_json, model, created_at) VALUES (?, ?, ?, ?)",
+            (sid, json.dumps({"elevator_pitch": "test"}), "test", 1001.0),
+        )
+        await db._db.execute(
+            "INSERT INTO segments (session_id, seq, text, timestamp) VALUES (?, ?, ?, ?)",
+            (sid, 1, "Some transcript text", 1001.0),
+        )
+        await db._db.commit()
+
+    asyncio.run(setup())
+
+    output = str(tmp_path / "out2.pptx")
+    chain = [{"provider": "test", "model": "m"}]
+
+    async def fake_generate(*args, **kwargs):
+        call_counts["generate"] += 1
+        return spec
+
+    qa_fail = {
+        "passed": False,
+        "issues": [{"slide": 2, "category": "visual", "severity": "blocking", "description": "text overflow"}],
+        "warnings": [], "summary": "1 blocking issue.",
+    }
+    qa_pass = {"passed": True, "issues": [], "warnings": [], "summary": "Fixed."}
+
+    async def fake_visual(*args, **kwargs):
+        call_counts["visual"] += 1
+        return qa_fail if call_counts["visual"] == 1 else qa_pass
+
+    with mock.patch.object(exp, "generate_deck_spec", fake_generate), \
+         mock.patch.object(exp, "_visual_qa", fake_visual):
+        result = asyncio.run(exp.export_pptx(sid, output, db_path=tmp_db, chain=chain))
+
+    assert result["passed"] is True
+    assert result["attempts"] == 2
+    assert call_counts["generate"] == 2
+    assert call_counts["visual"] == 2
+    assert result["summary"] == "Fixed."

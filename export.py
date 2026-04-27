@@ -14,7 +14,7 @@ Prerequisites:
     pip install playwright && playwright install chromium
 """
 
-import argparse, asyncio, json, os, re, subprocess, sys, tempfile
+import argparse, asyncio, base64, json, os, re, subprocess, sys, tempfile
 from datetime import datetime
 
 from log import logger
@@ -29,6 +29,7 @@ from prompts.slides import HTML_SLIDES_SYSTEM, deck_spec_system
 ANTHROPIC_API_KEY    = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_BASE_URL   = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 ANTHROPIC_AUTH_TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+_QA_MODEL = "claude-sonnet-4-6"
 HUGIN_BASE_URL       = os.environ.get("HUGIN_BASE_URL", "https://munin.btrbot.com")
 HUGIN_CF_ID          = os.environ.get("HUGIN_CF_ID", "")
 HUGIN_CF_SECRET      = os.environ.get("HUGIN_CF_SECRET", "")
@@ -625,9 +626,12 @@ def _build_user_prompt(
     session_date: str = "",
     reminder: str = "",
     corpus_block: str = "",
+    qa_feedback: str = "",
 ) -> str:
     """Build the LLM user prompt for deck_spec generation."""
     parts = []
+    if qa_feedback and qa_feedback.strip():
+        parts.append(qa_feedback.strip())
     if instructions and instructions.strip():
         parts.append(
             "INSTRUCTIONS (apply to ALL slides — "
@@ -873,6 +877,261 @@ _LAYOUT_CATALOG_STR = "\n".join(
 )
 
 
+def _structural_qa(deck_spec: dict) -> dict:
+    """Check deck_spec structure before assembly. Returns {"passed": bool, "issues": list[str]}."""
+    issues = []
+    slides = deck_spec.get("slides", [])
+
+    if not (3 <= len(slides) <= 15):
+        issues.append(f"Slide count {len(slides)} is outside allowed range 3–15")
+
+    consecutive = 1
+    for i in range(1, len(slides)):
+        if slides[i].get("layout") == slides[i - 1].get("layout"):
+            consecutive += 1
+            if consecutive > 3:
+                issues.append(
+                    f"Slides {i - 2}–{i + 1}: {consecutive} consecutive "
+                    f"'{slides[i]['layout']}' layouts (max 3)"
+                )
+        else:
+            consecutive = 1
+
+    gerundive = re.compile(r"^[A-Z][a-zA-Z]+ing\b")
+    bad_titles = [
+        f"Slide {i + 1}: \"{s.get('slots', {}).get('title', '')}\""
+        for i, s in enumerate(slides)
+        if gerundive.match(s.get("slots", {}).get("title") or "")
+    ]
+    if len(bad_titles) > 2:
+        issues.append(
+            f"{len(bad_titles)} gerundive slide titles (max 2): {'; '.join(bad_titles)}"
+        )
+
+    return {"passed": len(issues) == 0, "issues": issues}
+
+
+def _format_qa_feedback(structural_issues: list, visual_blocking: list) -> str:
+    """Format blocking QA issues as a feedback block for the next generate_deck_spec call.
+
+    Returns empty string when there are no blocking issues.
+    """
+    blocking_visual = [i for i in visual_blocking if i.get("severity") != "warning"]
+    if not structural_issues and not blocking_visual:
+        return ""
+    lines = ["QA FEEDBACK from previous generation — fix these issues:"]
+    for issue in structural_issues:
+        lines.append(f"[STRUCTURAL] {issue}")
+    for issue in blocking_visual:
+        cat = issue.get("category", "issue").upper()
+        slide = issue.get("slide", "?")
+        desc = issue.get("description", "")
+        lines.append(f"[{cat}] Slide {slide}: {desc}")
+    return "\n".join(lines)
+
+
+def _soffice_path() -> str | None:
+    """Find LibreOffice soffice binary on macOS or Linux. Returns None if not found."""
+    import shutil
+    mac_path = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+    if os.path.exists(mac_path):
+        return mac_path
+    return shutil.which("soffice")
+
+
+def _png_slide_index(path: str) -> int:
+    """Return the trailing integer from a PNG filename for numeric sort ordering."""
+    m = re.search(r"(\d+)\.png$", path)
+    return int(m.group(1)) if m else 0
+
+
+def _pptx_to_thumbnails(pptx_path: str, tmpdir: str) -> list[str]:
+    """Convert a .pptx to per-slide PNG thumbnails via LibreOffice headless.
+
+    Returns sorted list of PNG paths. Returns [] if soffice is unavailable or fails.
+    """
+    soffice = _soffice_path()
+    if not soffice:
+        return []
+    try:
+        result = subprocess.run(
+            [soffice, "--headless", "--convert-to", "png", "--outdir", tmpdir, pptx_path],
+            capture_output=True, timeout=60,
+        )
+        if result.returncode != 0:
+            logger.error(f"_pptx_to_thumbnails: soffice failed: {result.stderr.decode()}")
+            return []
+    except Exception as e:
+        logger.error(f"_pptx_to_thumbnails: soffice error: {e}")
+        return []
+    pngs = sorted(
+        [os.path.join(tmpdir, f) for f in os.listdir(tmpdir) if f.lower().endswith(".png")],
+        key=_png_slide_index,
+    )
+    return pngs
+
+
+_VISUAL_QA_PROMPT = """\
+You are inspecting an auto-generated PowerPoint presentation.
+Inspect each slide and evaluate the following criteria:
+
+1. CAPGEMINI TEMPLATE COMPLIANCE
+   Each slide must use the Capgemini Invent dark navy background,
+   corporate blue (#0058AB), and must not display a white or generic background.
+
+2. LAYOUT DIVERSITY
+   The deck must alternate between layouts (cards, bullets, columns, quotes).
+   Flag if more than 3 consecutive slides share the same visual structure.
+
+3. EXECUTIVE COMMITTEE CONTENT QUALITY
+   For each content slide (excluding cover and dividers):
+   - Is the title a DECLARATIVE ASSERTION (not a gerundive description)?
+     Good example: "The Transform-then-Run model is our primary competitive moat"
+     Bad example: "Positioning Capgemini Invent in the Market"
+   - Does the content name a decision, implication, risk, or action?
+   - Is the language appropriate for a Group Executive Committee audience?
+
+4. AGENDA COVERAGE (informational only — never blocking)
+   Note which of the following themes are present in the deck.
+   Absence is expected if the topic has not yet been discussed in the live session.
+   Positioning: What we sell (Transform vs run; Asset/IP-led; Front/Core/Back) /
+     Why now (Market inflexion; IOPs momentum; Agentic operations) /
+     Why well positioned (Tri-pod; Orchestrator; Credibility) /
+     To Whom (CXO play; Customer tier; Archetypes) / Position statement
+   Value Prop: What we do (Value engine; E2E reinvention) /
+     How we do it (Deals anatomy; Capabilities aggregation) /
+     What we get paid for (Value/Risks/Cash; Shared accountability)
+   Targets & horizon / Priorities & orchestration / Scope & non-goals
+
+5. VISUAL STANDARDS
+   - Text truncated or overflowing its shape or zone
+   - Overlapping elements
+   - Visible unfilled placeholder ("Lorem ipsum", unexpected empty zone)
+
+Reply ONLY in strict JSON (no markdown fences, no extra text):
+{"passed": true, "issues": [{"slide": 1, "category": "template", "severity": "blocking", "description": "..."}], "summary": "..."}
+"passed" must be false if at least one issue has severity "blocking".\
+"""
+
+
+def _parse_visual_qa_response(raw: str) -> dict:
+    """Parse the JSON string returned by the visual QA Claude call.
+
+    Returns {"passed": bool, "issues": list[dict], "warnings": list[dict], "summary": str}.
+    Blocking issues go into "issues"; warning issues go into "warnings".
+    """
+    raw = raw.strip()
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[a-zA-Z]*\n?", "", raw)
+        raw = re.sub(r"\n?```$", "", raw)
+        raw = raw.strip()
+    data = json.loads(raw)
+    issues = data.get("issues", [])
+    blocking = [i for i in issues if i.get("severity") == "blocking"]
+    warnings = [i for i in issues if i.get("severity") == "warning"]
+    return {
+        "passed": len(blocking) == 0,
+        "issues": blocking,
+        "warnings": warnings,
+        "summary": data.get("summary", ""),
+    }
+
+
+async def _visual_qa(
+    pptx_path: str,
+    deck_spec: dict,  # deck_spec: reserved for future deck-aware QA
+    session_topic: str = "",
+) -> dict:
+    """Run visual QA on a .pptx via LibreOffice thumbnails + Claude Haiku vision.
+
+    Returns {"passed": bool, "issues": list[dict], "warnings": list[dict], "summary": str}.
+    Gracefully skips (passed=True) if LibreOffice or Anthropic credentials are absent.
+    """
+    _skip = {"passed": True, "issues": [], "warnings": [], "summary": "Visual QA skipped"}
+
+    if not ANTHROPIC_API_KEY and not ANTHROPIC_AUTH_TOKEN:
+        logger.warning("_visual_qa: no Anthropic credentials — skipping")
+        return {**_skip, "summary": "Visual QA skipped (no Anthropic credentials)"}
+
+    if not _soffice_path():
+        logger.warning("_visual_qa: LibreOffice not found — skipping")
+        return {**_skip, "summary": "Visual QA skipped (LibreOffice not found)"}
+
+    with tempfile.TemporaryDirectory(prefix="mimir-qa-") as tmpdir:
+        png_paths = _pptx_to_thumbnails(pptx_path, tmpdir)
+        if not png_paths:
+            logger.warning("_visual_qa: thumbnail generation failed — skipping")
+            return {**_skip, "summary": "Visual QA skipped (thumbnail generation failed)"}
+
+        content = []
+
+        # Optional: inject one reference slide for style guidance
+        ref_deck = os.environ.get("PPTX_REFERENCE_DECK", "")
+        if ref_deck and os.path.exists(ref_deck):
+            with tempfile.TemporaryDirectory(prefix="mimir-ref-") as ref_tmpdir:
+                ref_pngs = _pptx_to_thumbnails(ref_deck, ref_tmpdir)
+                if ref_pngs:
+                    with open(ref_pngs[0], "rb") as f:
+                        ref_b64 = base64.b64encode(f.read()).decode()
+                    content.append({"type": "text", "text": "Reference: this is a correctly formatted Capgemini slide:"})
+                    content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": ref_b64}})
+
+        for i, path in enumerate(png_paths):
+            with open(path, "rb") as f:
+                img_b64 = base64.b64encode(f.read()).decode()
+            content.append({"type": "text", "text": f"Slide {i + 1}:"})
+            content.append({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": img_b64}})
+
+        ctx_note = "on the topic of Intelligent Operations (IOPS)"
+        if session_topic:
+            ctx_note += f" — {session_topic}"
+        context_header = (
+            f"Context: This deck is intended for the Capgemini Group Executive Committee, {ctx_note}.\n\n"
+        )
+        content.append({"type": "text", "text": context_header + _VISUAL_QA_PROMPT})
+
+        url = f"{ANTHROPIC_BASE_URL}/v1/messages"
+        headers = {"anthropic-version": "2023-06-01", "content-type": "application/json"}
+        if ANTHROPIC_AUTH_TOKEN:
+            headers["Authorization"] = f"Bearer {ANTHROPIC_AUTH_TOKEN}"
+        else:
+            headers["x-api-key"] = ANTHROPIC_API_KEY
+
+        body = {
+            "model": _QA_MODEL,
+            "max_tokens": 1024,
+            "messages": [{"role": "user", "content": content}],
+        }
+
+        n_slides = len(png_paths)
+        logger.info(f"_visual_qa: calling {_QA_MODEL} on {n_slides} slide(s)…")
+
+        timeout = aiohttp.ClientTimeout(total=120)
+        raw = ""
+        t0 = __import__("time").monotonic()
+        try:
+            async with aiohttp.ClientSession() as s:
+                async with s.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
+                    if r.status != 200:
+                        text = await r.text()
+                        logger.error(f"_visual_qa: API error {r.status}: {text[:200]}")
+                        return {**_skip, "summary": f"Visual QA skipped (API error {r.status})"}
+                    data = await r.json()
+                    raw = data["content"][0]["text"]
+        except Exception as e:
+            logger.error(f"_visual_qa: request failed: {e}")
+            return {**_skip, "summary": f"Visual QA skipped ({e})"}
+
+        dt = __import__("time").monotonic() - t0
+        logger.info(f"_visual_qa: response in {dt:.1f}s ({len(raw)} chars)")
+
+    try:
+        return _parse_visual_qa_response(raw)
+    except (json.JSONDecodeError, KeyError) as e:
+        logger.error(f"_visual_qa: JSON parse error: {e} — raw: {raw[:200]}")
+        return {**_skip, "summary": "Visual QA skipped (invalid JSON response)"}
+
+
 def _clear_slides(prs) -> None:
     """Remove all existing slides from a Presentation, keeping slide layouts and masters."""
     from pptx.oxml.ns import qn
@@ -982,6 +1241,7 @@ async def generate_deck_spec(
     session_topic: str = "",
     session_date: str = "",
     corpus_block: str = "",
+    qa_feedback: str = "",
 ) -> dict:
     """Generate a deck_spec from transcript + recap + instructions via LLM.
 
@@ -1008,6 +1268,7 @@ async def generate_deck_spec(
             session_date=session_date,
             reminder=reminder,
             corpus_block=corpus_block,
+            qa_feedback=qa_feedback,
         )
 
         for tier in chain:
@@ -1039,8 +1300,11 @@ async def generate_deck_spec(
 
 
 async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db",
-                      chain: list[dict] | None = None) -> None:
-    """Generate a PPTX slide deck via LLM (deck_spec) then assemble deterministically."""
+                      chain: list[dict] | None = None) -> dict:
+    """Generate a PPTX slide deck via LLM then assemble, with a QA loop (max 3 attempts).
+
+    Returns a QA result dict: {passed, attempts, structural_issues, visual_issues, warnings, summary}.
+    """
     if not chain:
         raise RuntimeError("export_pptx requires a chain. Pass chain= from app.py.")
 
@@ -1076,34 +1340,88 @@ async def export_pptx(session_id: str, output: str, db_path: str = "livemind.db"
     corpus_block = _format_corpus_for_slides(corpus_docs)
 
     topic = session.get("topic", "Untitled")
-    logger.info(f"PPTX export: session={session_id[:8]}… topic='{topic}' "
-          f"transcript={len(transcript)} chars instructions={'yes' if instructions else 'no'} "
-          f"deck_spec={'update' if current_deck_spec else 'new'} "
-          f"corpus={len(corpus_docs)} chunks")
-
     try:
         session_date = datetime.fromtimestamp(float(session.get("created_at", 0))).strftime("%d %B %Y")
     except Exception:
         session_date = ""
 
-    # Generate deck_spec via LLM
-    deck_spec = await generate_deck_spec(
-        transcript=transcript,
-        recap=recap,
-        instructions=instructions,
-        current_deck_spec=current_deck_spec,
-        chain=chain,
-        session_topic=topic,
-        session_date=session_date,
-        corpus_block=corpus_block,
+    logger.info(
+        f"PPTX export: session={session_id[:8]}… topic='{topic}' "
+        f"transcript={len(transcript)} chars instructions={'yes' if instructions else 'no'} "
+        f"deck_spec={'update' if current_deck_spec else 'new'} "
+        f"corpus={len(corpus_docs)} chunks"
     )
 
-    # Persist deck_spec
-    served_model = chain[0]["model"]
-    await db.save_deck_spec(session_id, deck_spec, served_model)
+    qa_result = {
+        "passed": False,
+        "attempts": 0,
+        "structural_issues": [],
+        "visual_issues": [],
+        "warnings": [],
+        "summary": "",
+    }
+    qa_feedback = ""
+    last_deck_spec = None
 
-    # Assemble PPTX
-    _assemble_pptx(deck_spec, output)
+    for attempt in range(3):
+        qa_result["attempts"] = attempt + 1
+        current_feedback = qa_feedback
+        qa_feedback = ""  # reset for next attempt
+
+        last_deck_spec = await generate_deck_spec(
+            transcript=transcript,
+            recap=recap,
+            instructions=instructions,
+            current_deck_spec=current_deck_spec,
+            chain=chain,
+            session_topic=topic,
+            session_date=session_date,
+            corpus_block=corpus_block,
+            qa_feedback=current_feedback,
+        )
+
+        # Step 1: Structural QA (no I/O, instant)
+        s_qa = _structural_qa(last_deck_spec)
+        qa_result["structural_issues"] = s_qa["issues"]
+
+        if not s_qa["passed"] and attempt < 2:
+            qa_feedback = _format_qa_feedback(s_qa["issues"], [])
+            logger.warning(
+                f"export_pptx: structural QA failed (attempt {attempt + 1}): {s_qa['issues']}"
+            )
+            continue  # retry without assembling
+
+        # Step 2: Assemble (even on last attempt if structural still failing)
+        _assemble_pptx(last_deck_spec, output)
+
+        # Step 3: Visual QA
+        v_qa = await _visual_qa(output, last_deck_spec, session_topic=topic)
+        blocking = v_qa.get("issues", [])
+        qa_result["visual_issues"] = [i["description"] for i in blocking]
+        qa_result["warnings"] = [i["description"] for i in v_qa.get("warnings", [])]
+        qa_result["summary"] = v_qa.get("summary", "")
+
+        if not blocking:
+            qa_result["passed"] = True
+            break
+
+        if attempt < 2:
+            qa_feedback = _format_qa_feedback([], blocking)
+            logger.warning(
+                f"export_pptx: visual QA failed (attempt {attempt + 1}): "
+                f"{[i['description'] for i in blocking]}"
+            )
+        else:
+            logger.warning(
+                f"export_pptx: QA exhausted after {attempt + 1} attempts, "
+                f"saving with {len(blocking)} unresolved blocking issues"
+            )
+
+    served_model = chain[0]["model"]
+    if last_deck_spec is not None:
+        await db.save_deck_spec(session_id, last_deck_spec, served_model)
+
+    return qa_result
 
 
 # ─── CLI ───
