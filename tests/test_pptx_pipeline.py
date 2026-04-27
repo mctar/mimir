@@ -602,18 +602,31 @@ def test_format_recap_v3():
         "scope_boundaries_non_goals": ["Not a functional pitch", "Not one-off"],
     }
     result = _format_recap(recap)
+    # Section headers
     assert "=== POSITIONING ===" in result
-    assert "What to sell?" in result
-    assert "End-to-end reinvention" in result
     assert "=== VALUE PROPOSITION ===" in result
-    assert "Design value engines" in result
     assert "=== POSITIONING STATEMENT ===" in result
-    assert "For Global 2000" in result
     assert "=== SCOPE / BOUNDARIES / NON-GOALS ===" in result
+    # Numbered sub-section headings (new format)
+    assert "[1] WHAT TO SELL?" in result
+    assert "[2] WHY NOW?" in result
+    assert "[3] WHY ARE WE WELL POSITIONED?" in result
+    assert "[4] TO WHOM?" in result
+    assert "[1] WHAT DO WE DO?" in result
+    assert "[2] HOW DO WE DO IT?" in result
+    assert "[3] HOW DO WE GET PAID?" in result
+    # Bullet items
+    assert "    • End-to-end reinvention" in result
+    assert "    • Agentic operations" in result
+    assert "    • Design value engines" in result
+    # Positioning statement and scope untouched
+    assert "For Global 2000" in result
     assert "Not a functional pitch" in result
-    # Internal metadata must NOT appear as content sections
+    # Internal metadata must NOT appear
     assert "Schema Version" not in result
     assert "Transcript Stats" not in result
+    # Old flat format must NOT appear
+    assert "What to sell?" not in result  # replaced by uppercase numbered heading
 
 
 def test_format_recap_unknown_keys():
@@ -671,6 +684,46 @@ def test_build_user_prompt_no_instructions():
         current_deck_spec=None,
     )
     assert "INSTRUCTIONS" not in prompt2
+
+
+def test_build_user_prompt_recap_bullet_format():
+    """User prompt contains numbered sub-section headings, not flat label→items lines."""
+    from export import _build_user_prompt
+
+    recap = {
+        "schema_version": 3,
+        "positioning": {
+            "what_to_sell": ["Transform-then-Run model", "Asset/IP-led services"],
+            "why_now": ["BPO contract renewal window"],
+        },
+        "value_proposition": {
+            "what_we_do": ["Design value engines"],
+        },
+    }
+    prompt = _build_user_prompt(
+        recap=recap,
+        transcript="some transcript",
+        instructions=None,
+        current_deck_spec=None,
+    )
+    # New bullet format present
+    assert "[1] WHAT TO SELL?" in prompt
+    assert "    • Transform-then-Run model" in prompt
+    assert "    • Asset/IP-led services" in prompt
+    assert "[2] WHY NOW?" in prompt
+    assert "[1] WHAT DO WE DO?" in prompt
+    # Old flat format absent
+    assert "What to sell?" not in prompt
+    assert "Transform-then-Run model; Asset/IP-led services" not in prompt
+
+
+def test_deck_spec_system_recap_content_rule():
+    """System prompt marks wrap-up slides as required when data is present."""
+    from prompts.slides import deck_spec_system
+
+    system = deck_spec_system("CATALOG")
+    assert "REQUIRED if positioning_statement" in system
+    assert "REQUIRED if scope_boundaries_non_goals" in system
 
 
 def test_assemble_divider_layout(tmp_path):

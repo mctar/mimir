@@ -63,10 +63,10 @@ RECOMMENDED STRUCTURE for a Positioning / Value Proposition recap:
 3. divider       — section separator "POSITIONING" (number "01")
 4. One slide per positioning sub-theme (what_to_sell, why_now, why_well_positioned, to_whom)
    → Prefer cards-* for parallel lists, bullets for linear items. But you can also pick one layout that best fits the content.
-5. quote-large   — positioning statement
+5. quote-large   — positioning statement  [REQUIRED if positioning_statement present in recap]
 6. divider       — section separator "VALUE PROPOSITION" (number "02")
 7. One slide per value proposition sub-theme (what_we_do, how_we_do_it, how_we_get_paid)
-8. bullets       — scope / boundaries / non-goals
+8. bullets       — scope / boundaries / non-goals  [REQUIRED if scope_boundaries_non_goals present in recap]
 9. [optional]    — conclusion or wrap-up slide
 
 Adapt this structure to the actual recap content. If a field is absent or empty in the recap,
