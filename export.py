@@ -29,7 +29,7 @@ from prompts.slides import HTML_SLIDES_SYSTEM, deck_spec_system
 ANTHROPIC_API_KEY    = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_BASE_URL   = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 ANTHROPIC_AUTH_TOKEN = os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
-_QA_MODEL = "claude-haiku-4-5-20251001"
+_QA_MODEL = "claude-sonnet-4-6"
 HUGIN_BASE_URL       = os.environ.get("HUGIN_BASE_URL", "https://munin.btrbot.com")
 HUGIN_CF_ID          = os.environ.get("HUGIN_CF_ID", "")
 HUGIN_CF_SECRET      = os.environ.get("HUGIN_CF_SECRET", "")
@@ -1103,8 +1103,12 @@ async def _visual_qa(
             "messages": [{"role": "user", "content": content}],
         }
 
+        n_slides = len(png_paths)
+        logger.info(f"_visual_qa: calling {_QA_MODEL} on {n_slides} slide(s)…")
+
         timeout = aiohttp.ClientTimeout(total=120)
         raw = ""
+        t0 = __import__("time").monotonic()
         try:
             async with aiohttp.ClientSession() as s:
                 async with s.post(url, headers=headers, json=body, timeout=timeout, ssl=False) as r:
@@ -1117,6 +1121,9 @@ async def _visual_qa(
         except Exception as e:
             logger.error(f"_visual_qa: request failed: {e}")
             return {**_skip, "summary": f"Visual QA skipped ({e})"}
+
+        dt = __import__("time").monotonic() - t0
+        logger.info(f"_visual_qa: response in {dt:.1f}s ({len(raw)} chars)")
 
     try:
         return _parse_visual_qa_response(raw)
