@@ -36,12 +36,6 @@ RULES:
   Choose the count based on content richness (3 = synthesis, 4–5 = detail).
   "cards-4-rounded" is a visual variant of "cards-4" — vary the two to avoid repetition.
 - For "divider": use it to introduce each major section (e.g. POSITIONING, VALUE PROPOSITION).
-- For sub-theme slides (what_to_sell, why_now, why_well_positioned, to_whom,
-  what_we_do, how_we_do_it, how_we_get_paid), use the recap bullet items directly
-  as the slide content. These are validated insights from the session — do not
-  invent or substitute alternatives. Recap-sourced bullets are accepted as-is;
-  do not cut them for being descriptive (the HEADLINE STANDARD applies to slide
-  titles only). If a bullet exceeds 20 words, truncate it — do not rephrase.
 - If a CURRENT DECK is provided, apply INSTRUCTIONS by modifying it — do not rebuild from scratch
   unless explicitly asked.
 - Max 15 slides. If content exceeds this, prioritize and condense.
@@ -55,7 +49,6 @@ Headlines must be declarative assertions, not gerundive descriptions.
   ✅ ACCEPT: "The Transform-then-Run model is the primary competitive moat"
 Bullet content must name a decision, implication, risk, or recommended action.
 Bullets that merely describe a topic (without naming what changes or what is at stake) must be cut.
-Exception: bullets drawn directly from recap sub-theme fields are kept as-is (see RULES above).
 
 OUTPUT LANGUAGE: Default to English.
 Only use another language if the session language field explicitly specifies it (e.g. "fr" → French).

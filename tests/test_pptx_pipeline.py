@@ -660,11 +660,10 @@ def test_build_user_prompt_recap_bullet_format():
 
 
 def test_deck_spec_system_recap_content_rule():
-    """System prompt instructs the LLM to use recap bullets directly."""
+    """System prompt marks wrap-up slides as required when data is present."""
     from prompts.slides import deck_spec_system
 
     system = deck_spec_system("CATALOG")
-    assert "use the recap bullet items directly" in system
     assert "REQUIRED if positioning_statement" in system
     assert "REQUIRED if scope_boundaries_non_goals" in system
 
