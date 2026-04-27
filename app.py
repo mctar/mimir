@@ -1361,83 +1361,109 @@ async def _clean_transcript_impl(session_id: str, segments: list[dict]) -> dict:
 
     system_prompt = transcript_cleaner_system(lang_name)
 
-    # Process in chunks. We use gemma4:26b (proven ~15-30s per call under live
-    # load) rather than 31b, and cap concurrency so we don't queue requests
-    # behind each other on Hugin's side.
-    CHUNK_SIZE = 40
+    # Token-aware chunking: cap by character budget rather than fixed segment count.
+    # Rule of thumb: 1 token ≈ 4 chars; cleaning output ≈ same size as input.
+    # We target ≤ 3000 output tokens per call to stay well within any model's limit.
+    CHAR_BUDGET = 12_000   # ~3000 tokens of output; hard cap per chunk
+    MAX_SEGS_PER_CHUNK = 50  # safety ceiling regardless of char count
     CHUNK_TIMEOUT = 120
-    MAX_CONCURRENCY = 3
-    model = "gemma4:26b"
+    MAX_CONCURRENCY = 4  # DGX Spark can handle more parallel calls
 
-    chunks = [segments[i:i + CHUNK_SIZE] for i in range(0, len(segments), CHUNK_SIZE)]
+    def _make_chunks(segs: list[dict]) -> list[list[dict]]:
+        result, current, current_chars = [], [], 0
+        for seg in segs:
+            seg_chars = len(seg["text"])
+            if current and (current_chars + seg_chars > CHAR_BUDGET or len(current) >= MAX_SEGS_PER_CHUNK):
+                result.append(current)
+                current, current_chars = [], 0
+            current.append(seg)
+            current_chars += seg_chars
+        if current:
+            result.append(current)
+        return result
+
+    chunks = _make_chunks(segments)
     sem = asyncio.Semaphore(MAX_CONCURRENCY)
 
-    async def clean_one(idx: int, chunk: list[dict]) -> tuple[int, list[dict], str | None]:
-        """Clean a single chunk. Returns (idx, cleaned_items, error_msg).
-        On any failure, falls back to originals and reports the error — never
-        raises, so one chunk can't abort the whole run."""
+    async def _call_llm_for_chunk(chunk: list[dict]) -> tuple[list | None, str | None]:
+        """Single LLM call for a chunk. Returns (parsed_list, error) — never raises."""
         texts = [seg["text"] for seg in chunk]
         user_prompt = "Clean these transcript segments:\n" + json.dumps(texts, ensure_ascii=False)
-        ollama_body = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            "stream": False,
-            "think": False,
-            "format": "json",
-            "options": {"temperature": 0, "num_predict": 4096},
-        }
-        fallback = [{"seq": seg["seq"], "cleaned_text": seg["text"]} for seg in chunk]
+        # Scale max_tokens to the actual chunk size; minimum 1024, cap at 8192
+        chunk_chars = sum(len(t) for t in texts)
+        max_tok = min(8192, max(1024, int(chunk_chars / 4 * 1.3) + 256))
+        try:
+            with _llm_chain_lock:
+                chain = list(_llm_chain)
+            raw_text = await _qa_llm_call_chain(
+                system_prompt,
+                [{"role": "user", "content": user_prompt}],
+                chain,
+                max_tokens=max_tok,
+                timeout_secs=CHUNK_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            return None, f"timeout after {CHUNK_TIMEOUT}s"
+        except Exception as e:
+            return None, f"{type(e).__name__}: {e}"
 
-        async with sem:
-            try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        f"{HUGIN_BASE_URL}/api/chat",
-                        headers=_hugin_headers(),
-                        json=ollama_body,
-                        timeout=aiohttp.ClientTimeout(total=CHUNK_TIMEOUT),
-                        ssl=False,
-                    ) as resp:
-                        if resp.status != 200:
-                            body = await resp.text()
-                            return idx, fallback, f"http {resp.status}: {body[:200]}"
-                        data = await resp.json()
-            except asyncio.TimeoutError:
-                return idx, fallback, f"timeout after {CHUNK_TIMEOUT}s"
-            except Exception as e:
-                return idx, fallback, f"{type(e).__name__}: {e}"
-
-        raw_text = data.get("message", {}).get("content", "")
         cleaned_str = raw_text.strip()
         if cleaned_str.startswith("```"):
             cleaned_str = cleaned_str.split("\n", 1)[1] if "\n" in cleaned_str else cleaned_str[3:]
         if cleaned_str.endswith("```"):
             cleaned_str = cleaned_str[:-3]
-
         try:
             parsed = json.loads(cleaned_str.strip())
         except json.JSONDecodeError as e:
-            return idx, fallback, f"json parse: {e}"
-
-        # LLM may wrap the array in an object — unwrap if so
+            return None, f"json parse: {e}"
         if isinstance(parsed, dict):
             for v in parsed.values():
                 if isinstance(v, list):
                     parsed = v
                     break
+        if not isinstance(parsed, list):
+            return None, "non-list response"
+        return parsed, None
 
-        if not isinstance(parsed, list) or len(parsed) != len(chunk):
-            got = len(parsed) if isinstance(parsed, list) else "non-list"
-            return idx, fallback, f"length mismatch: expected {len(chunk)} got {got}"
+    async def clean_one(idx: int, chunk: list[dict]) -> tuple[int, list[dict], str | None]:
+        """Clean a single chunk. On length mismatch, bisects and retries once.
+        On any failure, falls back to originals — never raises."""
+        fallback = [{"seq": seg["seq"], "cleaned_text": seg["text"]} for seg in chunk]
 
-        items = []
-        for j, seg in enumerate(chunk):
-            ct = parsed[j] if isinstance(parsed[j], str) else seg["text"]
-            items.append({"seq": seg["seq"], "cleaned_text": ct})
-        return idx, items, None
+        async with sem:
+            parsed, err = await _call_llm_for_chunk(chunk)
+
+        if err:
+            return idx, fallback, err
+
+        if len(parsed) == len(chunk):
+            items = [{"seq": seg["seq"], "cleaned_text": parsed[j] if isinstance(parsed[j], str) else seg["text"]}
+                     for j, seg in enumerate(chunk)]
+            return idx, items, None
+
+        # Length mismatch — bisect and retry each half independently
+        mid = len(chunk) // 2
+        halves = [chunk[:mid], chunk[mid:]]
+        items: list[dict] = []
+        bisect_errors: list[str] = []
+        for half in halves:
+            if not half:
+                continue
+            async with sem:
+                p2, e2 = await _call_llm_for_chunk(half)
+            if e2 or not isinstance(p2, list) or len(p2) != len(half):
+                detail = e2 or f"expected {len(half)} got {len(p2) if isinstance(p2, list) else '?'}"
+                bisect_errors.append(detail)
+                items.extend({"seq": seg["seq"], "cleaned_text": seg["text"]} for seg in half)
+            else:
+                items.extend({"seq": seg["seq"], "cleaned_text": p2[j] if isinstance(p2[j], str) else seg["text"]}
+                              for j, seg in enumerate(half))
+        err_msg = None
+        if bisect_errors:
+            err_msg = f"length mismatch ({len(parsed)}/{len(chunk)}), bisect partial: {'; '.join(bisect_errors)}"
+        elif len(parsed) != len(chunk):
+            err_msg = f"length mismatch ({len(parsed)}/{len(chunk)}), recovered via bisect"
+        return idx, items, err_msg
 
     # Initial progress state now that we know how many chunks we have
     total_chunks = len(chunks)
@@ -1468,7 +1494,8 @@ async def _clean_transcript_impl(session_id: str, segments: list[dict]) -> dict:
 
     changed = sum(1 for c, seg in zip(all_cleaned, segments) if c["cleaned_text"] != seg["text"])
 
-    status_detail = f"{changed}/{len(segments)} changed, model={model}"
+    used_model = _llm_chain[0]["model"] if _llm_chain else "unknown"
+    status_detail = f"{changed}/{len(segments)} changed, model={used_model}"
     if failed_chunks:
         status_detail += f", {len(failed_chunks)} chunks failed"
     log_activity("clean", session_id, "completed", status_detail)
@@ -1477,7 +1504,7 @@ async def _clean_transcript_impl(session_id: str, segments: list[dict]) -> dict:
         "ok": True,
         "total_segments": len(segments),
         "changed": changed,
-        "model": model,
+        "model": used_model,
         "failed_chunks": failed_chunks,
     }
 
@@ -1561,37 +1588,17 @@ async def generate_synthesis(request: Request):
 
     user_prompt = f"{all_sessions_text}\n\nGenerate the cross-session synthesis."
 
-    model = "gemma4:31b"
-    ollama_body = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        "stream": False,
-        "think": False,
-        "format": "json",
-        "options": {
-            "temperature": 0,
-            "num_predict": 4096,
-        },
-    }
-
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{HUGIN_BASE_URL}/api/chat",
-                headers=_hugin_headers(),
-                json=ollama_body,
-                timeout=aiohttp.ClientTimeout(total=300),
-                ssl=False,
-            ) as resp:
-                data = await resp.json()
-                if resp.status != 200:
-                    err = data.get("error", "") or str(data)
-                    return JSONResponse({"error": f"Ollama: {err}"}, status_code=502)
-
-        raw_text = data.get("message", {}).get("content", "")
+        with _llm_chain_lock:
+            chain = list(_llm_chain)
+        active_model = chain[0]["model"] if chain else "unknown"
+        raw_text = await _qa_llm_call_chain(
+            system_prompt,
+            [{"role": "user", "content": user_prompt}],
+            chain,
+            max_tokens=4096,
+            timeout_secs=300,
+        )
         cleaned = raw_text.strip()
         if cleaned.startswith("```"):
             cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
@@ -1601,13 +1608,13 @@ async def generate_synthesis(request: Request):
         synthesis["schema_version"] = 1
         synthesis["session_count"] = len(session_ids)
 
-        row_id = await db.store_synthesis(session_ids, synthesis, model)
-        log_activity("synthesis", ",".join(session_ids), "completed", f"{len(session_ids)} sessions, model={model}")
+        row_id = await db.store_synthesis(session_ids, synthesis, active_model)
+        log_activity("synthesis", ",".join(session_ids), "completed", f"{len(session_ids)} sessions, model={active_model}")
         return JSONResponse({
             "id": row_id,
             "session_ids": session_ids,
             "recap": synthesis,
-            "model": model,
+            "model": active_model,
             "created_at": time.time(),
         })
 
