@@ -4156,7 +4156,7 @@ async function submitAppend() {
     // Reload session to get updated transcript
     await openSession(sid);
     switchTab('transcript');
-    toast(`${data.appended_segments} segments ajoutés — total : ${data.total_segments} segments`);
+    toast(`${data.appended_segments} segments appended — total: ${data.total_segments}`);
   } catch (e) {
     errEl.textContent = String(e);
     btn.disabled = false;
