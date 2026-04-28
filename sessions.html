@@ -1456,6 +1456,34 @@ h1 {
   </div>
 </div>
 
+<!-- ═══ Append Transcript Modal ═══ -->
+<div id="append-overlay" class="import-overlay" style="display:none;"
+     onclick="if(event.target===this)closeAppendModal()">
+  <div class="import-modal">
+    <h2>Append Transcript</h2>
+    <p style="color:var(--muted);font-size:13px;margin:0 0 1rem;">
+      Segments will be appended after the existing transcript content.
+    </p>
+    <div class="import-field">
+      <label>Transcript *</label>
+      <div class="import-drop-zone" id="append-drop-zone"
+           onclick="document.getElementById('append-file').click()">
+        Drop a .txt or .vtt file here, or click to browse
+        <input type="file" id="append-file" accept=".txt,.vtt" style="display:none"
+               onchange="onAppendFile(this)">
+      </div>
+      <textarea class="import-textarea" id="append-textarea"
+                placeholder="Or paste transcript text here…"
+                oninput="updateAppendBtn()"></textarea>
+    </div>
+    <div class="import-actions">
+      <span class="import-error" id="append-error"></span>
+      <button class="btn btn-ghost" onclick="closeAppendModal()">Cancel</button>
+      <button class="btn" id="btn-append-submit" onclick="submitAppend()" disabled>Append</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ Detail View ═══ -->
 <div id="detail-view">
   <a class="detail-back" onclick="showList()">&larr; All Sessions</a>
@@ -1533,6 +1561,7 @@ h1 {
       <button class="btn btn-ghost" onclick="copyTranscriptMarkdown()">Copy Markdown</button>
       <button class="btn btn-ghost" onclick="downloadTranscriptMarkdown()">Download .md</button>
       <button class="btn btn-ghost" onclick="exportTranscriptPdf()">Export PDF</button>
+      <button class="btn btn-ghost" id="btn-append-transcript" onclick="openAppendModal()">+ Append Transcript</button>
       <label class="toggle-raw" id="toggle-raw-wrap" style="display:none;">
         <input type="checkbox" id="toggle-raw" onchange="renderTranscript()">
         <span>Show raw STT</span>
