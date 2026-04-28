@@ -6,6 +6,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import db
+from app import _parse_transcript, _split_segments
 
 
 @pytest.fixture
@@ -62,29 +63,24 @@ def test_append_continues_seq_and_timestamp(tmp_db):
     assert segs[3]["stt_backend"] == "external"
 
 
-def test_append_to_live_session_blocked(tmp_db):
-    """Cannot append to a live session — only external sessions are allowed."""
+def test_create_session_stores_source_correctly(tmp_db):
+    """Sessions store their source correctly in the database."""
     async def _go():
         await db.create_session("live-001", "Live", source="live")
 
     asyncio.run(_go())
     session = _run(db.get_session("live-001"))
     assert session["source"] == "live"
-    # The endpoint enforces this; here we verify db.get_session returns correct source.
 
 
-def test_append_empty_transcript_has_no_segments(tmp_db):
+def test_append_empty_transcript_has_no_segments():
     """An empty text produces zero parts when split."""
-    from app import _parse_transcript, _split_segments
-
     cleaned = _parse_transcript("   ")
     assert cleaned == ""
 
 
-def test_parse_and_split_pipeline(tmp_db):
+def test_parse_and_split_pipeline():
     """_parse_transcript + _split_segments correctly extract segments from raw text."""
-    from app import _parse_transcript, _split_segments
-
     raw = "Hello world.\n\nThis is paragraph two.\n\nAnd paragraph three."
     parts = _split_segments(_parse_transcript(raw))
     assert len(parts) == 3
