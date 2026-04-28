@@ -68,6 +68,7 @@ Hints: Value / risk / cash equation | Shared accountability models
 EXTRACTION & SYNTHESIS RULES (STRICT)
 - For each sub-question, identify transcript elements that directly address the associated hints
 - Synthesize into concise executive bullets
+- Maximum 5 bullets per sub-question — if you have more, merge or cut the weakest
 - Maximum 1–2 sentences per bullet
 - Each bullet must express a single, clear idea
 - If a hint is not discussed, do not mention it
