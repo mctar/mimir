@@ -35,21 +35,28 @@ ANALYTICAL FRAMEWORK – DAY 1 KEY DISCUSSION POINTS
 1. POSITIONING
 For each sub-question, extract only what is explicitly supported by the transcript.
 
-What do we sell?
-Hints: Transform and/or Run | Value game step-up | Asset / IP-led services | Front / Core / Back
+Where do we play?
+Hints: Transform and/or Run | Value game step-up | Asset / IP-led services | Front / Core / Back | Market segments and geographies
+
+Who we target?
+Hints: CXO-level play | Customer tiers | Client archetypes vs. real buying behavior | Named accounts or sectors
+
+TARGET AUDIENCE (sub-section of "Who we target")
+For each target persona discussed (e.g. CEO, COO, CFO, CHRO, others), extract:
+  - key_personas: Who are they? (role, decision-making power, context)
+  - pain_points: What pain points are being addressed for this persona?
+  - not_our_target: What or who is explicitly NOT our target for this persona?
+If a persona is not discussed, omit it from the array. Return [] if nothing discussed.
 
 Why now?
 Hints: Market inflection point | Transformation renewal | IOPs market momentum | Agentic operations becoming reality
 
-Why are we well positioned?
+Why us?
 Hints: Tri-pod (Transformation × Industry × Technology) | Orchestrator & neutral partner role | Credibility and proof points
-
-To whom do we sell?
-Hints: CXO-level play | Customer tiers | Client archetypes vs. real buying behavior
 
 2. VALUE PROPOSITION
 
-What do we do?
+What we sell?
 Hints: Value engine | End-to-end operational reinvention | Shift from static to dynamic services
 
 How do we do it?
@@ -71,10 +78,12 @@ EXTRACTION & SYNTHESIS RULES (STRICT)
 ADDITIONAL REQUIRED OUTPUTS
 In addition to the structured analysis, generate:
 
-1. POSITIONING STATEMENT
-- One single, sharp sentence
-- Synthesizing the four Positioning sub-questions
-- Suitable to be used as a slide headline
+1. POSITIONING STATEMENTS (3 ALTERNATIVES)
+- Exactly 3 distinct positioning statements
+- Each is a single sharp sentence synthesizing the Positioning section
+- The 3 alternatives must differ meaningfully — different angle, emphasis, or frame
+- Purpose: open a debate in the audience; each statement should provoke a different reaction
+- Suitable as slide headlines
 
 2. SCOPE / BOUNDARIES / NON-GOALS
 - Explicit list derived from the Value Proposition section
@@ -93,19 +102,24 @@ After filtering, if a sub-question list is empty, return []. An empty list is pr
 to a fabricated or generic insight.
 
 Return ONLY valid JSON with this exact structure:
+Note: target_audience must contain one object per persona ACTUALLY discussed in the transcript.
+Each object has keys: persona (string), key_personas (string), pain_points (array of strings),
+not_our_target (string). If no personas discussed, return [].
+
 {
   "positioning": {
-    "what_to_sell": [],
+    "where_to_play": [],
+    "who_target": [],
+    "target_audience": [],
     "why_now": [],
-    "why_well_positioned": [],
-    "to_whom": []
+    "why_us": []
   },
   "value_proposition": {
-    "what_we_do": [],
+    "what_we_sell": [],
     "how_we_do_it": [],
     "how_we_get_paid": []
   },
-  "positioning_statement": "",
+  "positioning_statements": ["", "", ""],
   "scope_boundaries_non_goals": []
 }"""
 

@@ -1289,6 +1289,15 @@ h1 {
   line-height: 1.55;
 }
 
+.v3-target-audience { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.v3-persona-card { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 8px 10px; min-width: 180px; flex: 1; }
+.v3-persona-name { font-weight: 600; font-size: 0.85rem; color: var(--accent, #0058AB); margin-bottom: 4px; }
+.v3-persona-q { font-size: 0.75rem; opacity: 0.6; }
+.v3-persona-field { font-size: 0.8rem; margin-top: 3px; }
+.v3-persona-field ul { margin: 2px 0 0 14px; padding: 0; }
+.v3-statements-list { padding-left: 16px; margin: 4px 0; }
+.v3-statements-list li { margin-bottom: 6px; font-style: italic; }
+
 .v3-scope {
   padding: 14px 18px;
   border-top: 1px solid var(--bdr);
@@ -1980,8 +1989,9 @@ async function saveEdit() {
   } else if (field === 'open_threads') {
     r.open_threads = Array.from(document.querySelectorAll('#edit-open_threads input'))
       .map(i => i.value.trim()).filter(v => v);
-  } else if (field === 'positioning_statement') {
-    r.positioning_statement = document.getElementById('edit-positioning_statement').value.trim();
+  } else if (field === 'positioning_statements') {
+    r.positioning_statements = Array.from(document.querySelectorAll('#edit-v3-list-positioning-statements input'))
+      .map(i => i.value.trim()).filter(v => v);
   } else if (field === 'scope_boundaries_non_goals') {
     r.scope_boundaries_non_goals = Array.from(document.querySelectorAll('#edit-v3-list-scope input'))
       .map(i => i.value.trim()).filter(v => v);
@@ -2273,29 +2283,51 @@ function renderRecapV3(r) {
   }
 
   let posContent = '';
-  posContent += subQuestion('positioning', 'what_to_sell', 'What do we sell?', pos.what_to_sell || []);
-  posContent += subQuestion('positioning', 'why_now', 'Why now?', pos.why_now || []);
-  posContent += subQuestion('positioning', 'why_well_positioned', 'Why are we well positioned?', pos.why_well_positioned || []);
-  posContent += subQuestion('positioning', 'to_whom', 'To whom?', pos.to_whom || []);
+  posContent += subQuestion('positioning', 'where_to_play', 'Where do we play?', pos.where_to_play || []);
+  posContent += subQuestion('positioning', 'who_target', 'Who we target?', pos.who_target || []);
 
+  // Target audience: read-only nested display
+  const targetAudience = pos.target_audience || [];
+  if (targetAudience.length > 0) {
+    posContent += `<div class="v3-sub-question">
+      <div class="v3-sub-label">Target audience</div>
+      <div class="v3-target-audience">
+        ${targetAudience.map(p => `
+          <div class="v3-persona-card">
+            <div class="v3-persona-name">${esc(p.persona || '')}</div>
+            ${p.key_personas ? `<div class="v3-persona-field"><span class="v3-persona-q">Key personas:</span> ${esc(p.key_personas)}</div>` : ''}
+            ${(p.pain_points && p.pain_points.length) ? `<div class="v3-persona-field"><span class="v3-persona-q">Pain points:</span> <ul>${(Array.isArray(p.pain_points) ? p.pain_points : [p.pain_points]).map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : ''}
+            ${p.not_our_target ? `<div class="v3-persona-field"><span class="v3-persona-q">Not our target:</span> ${esc(p.not_our_target)}</div>` : ''}
+          </div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  posContent += subQuestion('positioning', 'why_now', 'Why now?', pos.why_now || []);
+  posContent += subQuestion('positioning', 'why_us', 'Why us?', pos.why_us || []);
+
+  const posStmts = r.positioning_statements || [];
   let statementContent = '';
-  if (_editingField === 'positioning_statement') {
+  if (_editingField === 'positioning_statements') {
     statementContent = `<div class="v3-statement">
-      <div class="v3-statement-label">Positioning Statement</div>
-      <textarea id="edit-positioning_statement" class="recap-edit-textarea" style="min-height:60px">${esc(r.positioning_statement || '')}</textarea>
+      <div class="v3-statement-label">Positioning Statements (3 alternatives)</div>
+      <ul id="edit-v3-list-positioning-statements" class="v3-edit-list">
+        ${posStmts.map(s => `<li><input type="text" class="recap-edit-input" value="${esc(s).replace(/"/g, '&quot;')}"> <button class="recap-edit-del" onclick="this.closest('li').remove()">×</button></li>`).join('')}
+      </ul>
+      <button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="addEditItem('edit-v3-list-positioning-statements','li')">+ Add</button>
       ${editActions()}
     </div>`;
   } else {
     statementContent = `<div class="v3-statement">
-      <div class="v3-statement-label">Positioning Statement ${editBtn('positioning_statement')}</div>
-      ${r.positioning_statement
-        ? `<div class="v3-statement-text">"${esc(r.positioning_statement)}"</div>`
+      <div class="v3-statement-label">Positioning Statements ${editBtn('positioning_statements')}</div>
+      ${posStmts.length
+        ? `<ol class="v3-statements-list">${posStmts.map(s => `<li>"${esc(s)}"</li>`).join('')}</ol>`
         : `<div class="v3-empty-col">Not captured — click to add.</div>`}
     </div>`;
   }
 
   let vpContent = '';
-  vpContent += subQuestion('value_proposition', 'what_we_do', 'What do we do?', vp.what_we_do || []);
+  vpContent += subQuestion('value_proposition', 'what_we_sell', 'What we sell?', vp.what_we_sell || []);
   vpContent += subQuestion('value_proposition', 'how_we_do_it', 'How do we do it?', vp.how_we_do_it || []);
   vpContent += subQuestion('value_proposition', 'how_we_get_paid', 'How do we get paid?', vp.how_we_get_paid || []);
 

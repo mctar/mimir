@@ -61,11 +61,11 @@ RECOMMENDED STRUCTURE for a Positioning / Value Proposition recap:
 1. cover         — title slide (topic, date, duration)
 2. bullets/cards — overview of themes covered (optional)
 3. divider       — section separator "POSITIONING" (number "01")
-4. One slide per positioning sub-theme (what_to_sell, why_now, why_well_positioned, to_whom)
-   → Prefer cards-* for parallel lists, bullets for linear items. But you can also pick one layout that best fits the content.
-5. quote-large   — positioning statement  [REQUIRED if positioning_statement present in recap]
+4. One slide per positioning sub-theme (where_to_play, who_target, target_audience, why_now, why_us)
+   → Prefer cards-* for parallel lists (especially target_audience: one card per persona), bullets for linear items.
+5. quote-large (×3) — positioning statements (one per alternative)  [REQUIRED if positioning_statements present]
 6. divider       — section separator "VALUE PROPOSITION" (number "02")
-7. One slide per value proposition sub-theme (what_we_do, how_we_do_it, how_we_get_paid)
+7. One slide per value proposition sub-theme (what_we_sell, how_we_do_it, how_we_get_paid)
 8. bullets       — scope / boundaries / non-goals  [REQUIRED if scope_boundaries_non_goals present in recap]
 9. [optional]    — conclusion or wrap-up slide
 
@@ -80,10 +80,10 @@ Additionally, return a "slide_updates" array in the same JSON object.
 For each slide whose topic is addressed in the CURRENT transcript excerpt, provide:
   {"slide_id": "...", "bullets": ["...", "..."], "key_quote": "verbatim quote or null if none"}
 Slide IDs and their questions:
-  pos_what_sell="What we sell?", pos_why_now="Why now?",
-  pos_why_us="Why are we well positioned?", pos_to_whom="To Whom?",
-  pos_statement="Position statement (one sentence summary)",
-  val_what_do="What we do?", val_how="How we do it?",
+  pos_where_play="Where do we play?", pos_who_target="Who we target?",
+  pos_target_audience="Target audience", pos_why_now="Why now?",
+  pos_why_us="Why us?", pos_statement="Positioning statements (3 alternatives, debate openers)",
+  val_what_sell="What we sell?", val_how="How we do it?",
   val_paid="What do we get paid?", val_scope="Scope, boundaries & non-goals",
   d2_targets="Targets and horizon", d2_priorities="Priorities and orchestration"
 Only include slides with NEW relevant content from the current segment.

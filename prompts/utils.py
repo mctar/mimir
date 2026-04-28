@@ -69,8 +69,8 @@ VOCABULARY_HINTS = (
 WHISPER_DEFAULT_PROMPT = (
     "GEB ASE IOPS (Group Executive Board – Accelerator Solution Environment – Intelligent Operations): "
     "Capgemini executive programme, Day 1 strategic working session on Intelligent Operations (IOPS). "
-    "Agenda: align on positioning (what to sell, why now, why well-positioned, to whom) "
-    "and value proposition (what we do, how we do it, how we get paid). "
+    "Agenda: align on positioning (where to play, who we target, why now, why us) "
+    "and value proposition (what we sell, how we do it, how we get paid). "
     "Key topics: Transform-and-Run, Value game step-up, Asset/IP-led services, "
     "Front/Core/Back, market inflexion, transformation renewal, IOPs market momentum, "
     "agentic operations, Tri-pod (Transfo x Industry x Tech), orchestrator and neutral partner, "
