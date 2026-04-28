@@ -1750,6 +1750,8 @@ function renderDetail() {
 
   renderRecap();
   renderTranscript();
+  document.getElementById('btn-append-transcript').style.display =
+    (s.source === 'external') ? '' : 'none';
   initQaTab();   // reset Q&A history (sync) + load corpus badge in background (async)
   // Reset to recap tab
   switchTab('recap');
