@@ -4080,6 +4080,90 @@ async function submitImport() {
   }
 }
 
+// ─── Append Transcript Modal ──────────────────────────────────────────────
+
+function openAppendModal() {
+  document.getElementById('append-textarea').value = '';
+  document.getElementById('append-error').textContent = '';
+  document.getElementById('btn-append-submit').disabled = true;
+  document.getElementById('append-overlay').style.display = 'flex';
+  document.getElementById('append-textarea').focus();
+}
+
+function closeAppendModal() {
+  document.getElementById('append-overlay').style.display = 'none';
+}
+
+function updateAppendBtn() {
+  const ok = document.getElementById('append-textarea').value.trim();
+  document.getElementById('btn-append-submit').disabled = !ok;
+}
+
+function onAppendFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('append-textarea').value = e.target.result;
+    updateAppendBtn();
+  };
+  reader.readAsText(file, 'utf-8');
+  input.value = '';
+}
+
+(function setupAppendDrop() {
+  const zone = document.getElementById('append-drop-zone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      document.getElementById('append-textarea').value = ev.target.result;
+      updateAppendBtn();
+    };
+    reader.readAsText(file, 'utf-8');
+  });
+})();
+
+async function submitAppend() {
+  const transcript = document.getElementById('append-textarea').value.trim();
+  const errEl = document.getElementById('append-error');
+  const btn   = document.getElementById('btn-append-submit');
+  const sid   = current.session.id;
+
+  errEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Appending…';
+
+  try {
+    const resp = await fetch(`/v1/sessions/${sid}/append-transcript`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcript }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errEl.textContent = data.error || 'Append failed';
+      btn.disabled = false;
+      btn.textContent = 'Append';
+      return;
+    }
+    closeAppendModal();
+    // Reload session to get updated transcript
+    await openSession(sid);
+    switchTab('transcript');
+    toast(`${data.appended_segments} segments ajoutés — total : ${data.total_segments} segments`);
+  } catch (e) {
+    errEl.textContent = String(e);
+    btn.disabled = false;
+    btn.textContent = 'Append';
+  }
+}
+
 function toast(msg, isError) {
   const el = document.getElementById('toast');
   el.textContent = msg;
