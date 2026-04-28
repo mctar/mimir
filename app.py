@@ -683,6 +683,61 @@ async def import_transcript(request: Request):
     return JSONResponse({"session_id": session_id, "segments": len(parts)})
 
 
+@app.post("/v1/sessions/{session_id}/append-transcript")
+async def append_transcript(session_id: str, request: Request):
+    """Append additional transcript content to an existing external session."""
+    session = await db.get_session(session_id)
+    if session is None:
+        return JSONResponse({"error": f"Session {session_id} not found"}, status_code=404)
+    if session.get("source") != "external":
+        return JSONResponse(
+            {"error": "Only external sessions support transcript append"},
+            status_code=400,
+        )
+
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+
+    raw = (body.get("transcript") or "").strip()
+    if not raw:
+        return JSONResponse({"error": "transcript is required"}, status_code=400)
+    if len(raw) > 5_000_000:
+        return JSONResponse({"error": "Transcript exceeds 5 MB limit"}, status_code=400)
+
+    cleaned = _parse_transcript(raw)
+    if not cleaned:
+        return JSONResponse({"error": "Transcript is empty after parsing"}, status_code=400)
+
+    parts = _split_segments(cleaned)
+
+    # Find continuation point
+    last_info = await db.get_last_segment_info(session_id)
+    if last_info:
+        last_seq = last_info["seq"]
+        last_ts = last_info["timestamp"]
+    else:
+        last_seq = 0
+        last_ts = session.get("created_at", time.time())
+
+    for i, text in enumerate(parts, start=1):
+        await db.store_segment(
+            session_id=session_id,
+            seq=last_seq + i,
+            text=text,
+            is_partial=False,
+            timestamp=last_ts + i,
+            stt_backend="external",
+            stt_language="",
+        )
+
+    total = last_seq + len(parts)
+    await db.store_action(session_id, "append_transcript", {"appended": len(parts), "total": total})
+    logger.info(f"append_transcript: session={session_id} appended={len(parts)} total={total}")
+    return JSONResponse({"session_id": session_id, "appended_segments": len(parts), "total_segments": total})
+
+
 @app.post("/v1/sessions")
 async def create_session(request: Request):
     body = await request.json()

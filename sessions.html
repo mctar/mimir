@@ -1456,6 +1456,34 @@ h1 {
   </div>
 </div>
 
+<!-- ═══ Append Transcript Modal ═══ -->
+<div id="append-overlay" class="import-overlay" style="display:none;"
+     onclick="if(event.target===this)closeAppendModal()">
+  <div class="import-modal">
+    <h2>Append Transcript</h2>
+    <p style="color:var(--muted);font-size:13px;margin:0 0 1rem;">
+      Segments will be appended after the existing transcript content.
+    </p>
+    <div class="import-field">
+      <label>Transcript *</label>
+      <div class="import-drop-zone" id="append-drop-zone"
+           onclick="document.getElementById('append-file').click()">
+        Drop a .txt or .vtt file here, or click to browse
+        <input type="file" id="append-file" accept=".txt,.vtt" style="display:none"
+               onchange="onAppendFile(this)">
+      </div>
+      <textarea class="import-textarea" id="append-textarea"
+                placeholder="Or paste transcript text here…"
+                oninput="updateAppendBtn()"></textarea>
+    </div>
+    <div class="import-actions">
+      <span class="import-error" id="append-error"></span>
+      <button class="btn btn-ghost" onclick="closeAppendModal()">Cancel</button>
+      <button class="btn" id="btn-append-submit" onclick="submitAppend()" disabled>Append</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ Detail View ═══ -->
 <div id="detail-view">
   <a class="detail-back" onclick="showList()">&larr; All Sessions</a>
@@ -1533,6 +1561,7 @@ h1 {
       <button class="btn btn-ghost" onclick="copyTranscriptMarkdown()">Copy Markdown</button>
       <button class="btn btn-ghost" onclick="downloadTranscriptMarkdown()">Download .md</button>
       <button class="btn btn-ghost" onclick="exportTranscriptPdf()">Export PDF</button>
+      <button class="btn btn-ghost" id="btn-append-transcript" onclick="openAppendModal()">Append Transcript</button>
       <label class="toggle-raw" id="toggle-raw-wrap" style="display:none;">
         <input type="checkbox" id="toggle-raw" onchange="renderTranscript()">
         <span>Show raw STT</span>
@@ -1721,6 +1750,8 @@ function renderDetail() {
 
   renderRecap();
   renderTranscript();
+  document.getElementById('btn-append-transcript').style.display =
+    (s.source === 'external') ? '' : 'none';
   initQaTab();   // reset Q&A history (sync) + load corpus badge in background (async)
   // Reset to recap tab
   switchTab('recap');
@@ -3560,7 +3591,65 @@ function exportPdf() {
   if (current.recap) {
     const r = current.recap.recap;
 
-    if (r.schema_version === 2) {
+    if (r.schema_version === 3) {
+      const pos = r.positioning || {};
+      const vp = r.value_proposition || {};
+
+      function pdfSubQ(label, bullets) {
+        if (!bullets || !bullets.length) return '';
+        return `<div class="pdf-sq"><div class="pdf-sq-label">${esc(label)}</div><ul>${bullets.map(b => `<li>${esc(b)}</li>`).join('')}</ul></div>`;
+      }
+
+      let posHtml = '';
+      posHtml += pdfSubQ('Where do we play?', pos.where_to_play || []);
+      posHtml += pdfSubQ('Who we target?', pos.who_target || []);
+
+      const audience = pos.target_audience || [];
+      if (audience.length > 0) {
+        posHtml += `<div class="pdf-sq"><div class="pdf-sq-label">Target Audience</div><div class="pdf-personas">`;
+        audience.forEach(p => {
+          posHtml += `<div class="pdf-pcard"><div class="pdf-pname">${esc(p.persona || '')}</div>`;
+          if (p.key_personas) posHtml += `<div class="pdf-pfield"><span class="pdf-pq">Key personas:</span> ${esc(p.key_personas)}</div>`;
+          if (p.pain_points && p.pain_points.length) {
+            const pts = Array.isArray(p.pain_points) ? p.pain_points : [p.pain_points];
+            posHtml += `<div class="pdf-pfield"><span class="pdf-pq">Pain points:</span><ul>${pts.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+          }
+          if (p.not_our_target) posHtml += `<div class="pdf-pfield"><span class="pdf-pq">Not our target:</span> ${esc(p.not_our_target)}</div>`;
+          posHtml += `</div>`;
+        });
+        posHtml += `</div></div>`;
+      }
+
+      posHtml += pdfSubQ('Why now?', pos.why_now || []);
+      posHtml += pdfSubQ('Why us?', pos.why_us || []);
+
+      const stmts = r.positioning_statements || [];
+      if (stmts.length) {
+        posHtml += `<div class="pdf-stmts"><div class="pdf-stmts-label">Positioning Statements</div><ol>${stmts.map(s => `<li>"${esc(s)}"</li>`).join('')}</ol></div>`;
+      }
+
+      let vpHtml = '';
+      vpHtml += pdfSubQ('What we sell?', vp.what_we_sell || []);
+      vpHtml += pdfSubQ('How do we do it?', vp.how_we_do_it || []);
+      vpHtml += pdfSubQ('How do we get paid?', vp.how_we_get_paid || []);
+
+      const scope = r.scope_boundaries_non_goals || [];
+      if (scope.length) {
+        vpHtml += `<div class="pdf-scope"><div class="pdf-scope-label">Scope / Boundaries / Non-Goals</div><ul>${scope.map(s => `<li>${esc(s)}</li>`).join('')}</ul></div>`;
+      }
+
+      body += `<div class="pdf-v3grid">
+        <div class="pdf-v3col pdf-v3col-pos">
+          <div class="pdf-v3hdr">Positioning</div>
+          ${posHtml || '<p class="muted">No positioning data captured.</p>'}
+        </div>
+        <div class="pdf-v3col pdf-v3col-vp">
+          <div class="pdf-v3hdr">Value Proposition</div>
+          ${vpHtml || '<p class="muted">No value proposition data captured.</p>'}
+        </div>
+      </div>`;
+
+    } else if (r.schema_version === 2) {
       if (r.elevator_pitch) {
         body += `<p class="pitch">${esc(r.elevator_pitch)}</p>`;
       }
@@ -3706,9 +3795,33 @@ function exportPdf() {
     letter-spacing: 0.3px;
   }
 
+  /* v3 Day 1 schema */
+  .pdf-v3grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+  .pdf-v3col { border: 1px solid #ddd; border-radius: 4px; overflow: hidden; break-inside: avoid; }
+  .pdf-v3hdr { font-family: 'Ubuntu Mono', monospace; font-size: 8pt; font-weight: 500; text-transform: uppercase; letter-spacing: 2px; color: white; padding: 8px 12px; }
+  .pdf-v3col-pos .pdf-v3hdr { background: #0058AB; }
+  .pdf-v3col-vp  .pdf-v3hdr { background: #22a67a; }
+  .pdf-sq { padding: 8px 12px; border-bottom: 1px solid #eee; }
+  .pdf-sq-label { font-family: 'Ubuntu Mono', monospace; font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.8px; color: #888; margin-bottom: 4px; }
+  .pdf-sq ul { margin: 0 0 0 14px; }
+  .pdf-sq li { margin-bottom: 3px; font-size: 9.5pt; line-height: 1.5; }
+  .pdf-personas { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .pdf-pcard { border: 1px solid #eee; border-radius: 4px; padding: 6px 8px; flex: 1; min-width: 110px; break-inside: avoid; }
+  .pdf-pname { font-weight: 600; font-size: 9pt; color: #0058AB; margin-bottom: 3px; }
+  .pdf-pq { font-size: 7.5pt; color: #999; }
+  .pdf-pfield { font-size: 8.5pt; margin-top: 2px; line-height: 1.4; }
+  .pdf-pfield ul { margin: 2px 0 0 12px; }
+  .pdf-stmts, .pdf-scope { padding: 8px 12px; border-top: 1px solid #eee; }
+  .pdf-stmts-label, .pdf-scope-label { font-family: 'Ubuntu Mono', monospace; font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.8px; color: #888; margin-bottom: 4px; }
+  .pdf-stmts ol { margin: 0 0 0 14px; }
+  .pdf-stmts li { font-style: italic; font-size: 9.5pt; margin-bottom: 4px; }
+  .pdf-scope ul { margin: 0 0 0 14px; }
+  .pdf-scope li { font-size: 9.5pt; margin-bottom: 3px; }
+
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .no-print { display: none !important; }
+    .pdf-v3grid { grid-template-columns: 1fr 1fr; }
   }
 
   .print-btn {
@@ -4048,6 +4161,90 @@ async function submitImport() {
     errEl.textContent = String(e);
     btn.disabled = false;
     btn.textContent = 'Import';
+  }
+}
+
+// ─── Append Transcript Modal ──────────────────────────────────────────────
+
+function openAppendModal() {
+  document.getElementById('append-textarea').value = '';
+  document.getElementById('append-error').textContent = '';
+  document.getElementById('btn-append-submit').disabled = true;
+  document.getElementById('append-overlay').style.display = 'flex';
+  document.getElementById('append-textarea').focus();
+}
+
+function closeAppendModal() {
+  document.getElementById('append-overlay').style.display = 'none';
+}
+
+function updateAppendBtn() {
+  const ok = document.getElementById('append-textarea').value.trim();
+  document.getElementById('btn-append-submit').disabled = !ok;
+}
+
+function onAppendFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('append-textarea').value = e.target.result;
+    updateAppendBtn();
+  };
+  reader.readAsText(file, 'utf-8');
+  input.value = '';
+}
+
+(function setupAppendDrop() {
+  const zone = document.getElementById('append-drop-zone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      document.getElementById('append-textarea').value = ev.target.result;
+      updateAppendBtn();
+    };
+    reader.readAsText(file, 'utf-8');
+  });
+})();
+
+async function submitAppend() {
+  const transcript = document.getElementById('append-textarea').value.trim();
+  const errEl = document.getElementById('append-error');
+  const btn   = document.getElementById('btn-append-submit');
+  const sid   = current.session.id;
+
+  errEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Appending…';
+
+  try {
+    const resp = await fetch(`/v1/sessions/${sid}/append-transcript`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transcript }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errEl.textContent = data.error || 'Append failed';
+      btn.disabled = false;
+      btn.textContent = 'Append';
+      return;
+    }
+    closeAppendModal();
+    // Reload session to get updated transcript
+    await openSession(sid);
+    switchTab('transcript');
+    toast(`${data.appended_segments} segments appended — total: ${data.total_segments}`);
+  } catch (e) {
+    errEl.textContent = String(e);
+    btn.disabled = false;
+    btn.textContent = 'Append';
   }
 }
 
