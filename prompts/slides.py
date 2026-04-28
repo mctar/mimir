@@ -80,10 +80,10 @@ Additionally, return a "slide_updates" array in the same JSON object.
 For each slide whose topic is addressed in the CURRENT transcript excerpt, provide:
   {"slide_id": "...", "bullets": ["...", "..."], "key_quote": "verbatim quote or null if none"}
 Slide IDs and their questions:
-  pos_what_sell="What we sell?", pos_why_now="Why now?",
-  pos_why_us="Why are we well positioned?", pos_to_whom="To Whom?",
-  pos_statement="Position statement (one sentence summary)",
-  val_what_do="What we do?", val_how="How we do it?",
+  pos_where_play="Where do we play?", pos_who_target="Who we target?",
+  pos_target_audience="Target audience", pos_why_now="Why now?",
+  pos_why_us="Why us?", pos_statement="Positioning statements (one sentence summary)",
+  val_what_sell="What we sell?", val_how="How we do it?",
   val_paid="What do we get paid?", val_scope="Scope, boundaries & non-goals",
   d2_targets="Targets and horizon", d2_priorities="Priorities and orchestration"
 Only include slides with NEW relevant content from the current segment.

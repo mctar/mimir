@@ -263,19 +263,20 @@ _summary: str = ""
 # ─── Live slides state ───────────────────────────────────────────────────────
 SLIDE_TEMPLATE: list[dict] = [
     # Positioning
-    {"id": "pos_what_sell", "section": "Positioning",       "title": "What we sell?"},
-    {"id": "pos_why_now",   "section": "Positioning",       "title": "Why now?"},
-    {"id": "pos_why_us",    "section": "Positioning",       "title": "Why are we well positioned?"},
-    {"id": "pos_to_whom",   "section": "Positioning",       "title": "To Whom?"},
-    {"id": "pos_statement", "section": "Positioning",       "title": "Position statement"},
+    {"id": "pos_where_play",      "section": "Positioning",       "title": "Where do we play?"},
+    {"id": "pos_who_target",      "section": "Positioning",       "title": "Who we target?"},
+    {"id": "pos_target_audience", "section": "Positioning",       "title": "Target audience"},
+    {"id": "pos_why_now",         "section": "Positioning",       "title": "Why now?"},
+    {"id": "pos_why_us",          "section": "Positioning",       "title": "Why us?"},
+    {"id": "pos_statement",       "section": "Positioning",       "title": "Positioning statements"},
     # Value Proposition
-    {"id": "val_what_do",   "section": "Value Proposition", "title": "What we do?"},
-    {"id": "val_how",       "section": "Value Proposition", "title": "How we do it?"},
-    {"id": "val_paid",      "section": "Value Proposition", "title": "What do we get paid?"},
-    {"id": "val_scope",     "section": "Value Proposition", "title": "Scope, boundaries & non-goals"},
+    {"id": "val_what_sell",       "section": "Value Proposition", "title": "What we sell?"},
+    {"id": "val_how",             "section": "Value Proposition", "title": "How we do it?"},
+    {"id": "val_paid",            "section": "Value Proposition", "title": "What do we get paid?"},
+    {"id": "val_scope",           "section": "Value Proposition", "title": "Scope, boundaries & non-goals"},
     # Day 2 & Day 3
-    {"id": "d2_targets",    "section": "Day 2 & Day 3",     "title": "Targets and horizon"},
-    {"id": "d2_priorities", "section": "Day 2 & Day 3",     "title": "Priorities and orchestration"},
+    {"id": "d2_targets",          "section": "Day 2 & Day 3",     "title": "Targets and horizon"},
+    {"id": "d2_priorities",       "section": "Day 2 & Day 3",     "title": "Priorities and orchestration"},
 ]
 
 _slides: dict[str, dict] = {
