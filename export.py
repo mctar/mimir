@@ -477,7 +477,8 @@ def _fmt_recap_items(value) -> list[str]:
 _SKIP_RECAP_KEYS = {"schema_version", "transcript_stats"}
 _V3_STRUCTURED_KEYS = {
     "positioning", "value_proposition",
-    "positioning_statements", "scope_boundaries_non_goals",
+    "positioning_statements", "positioning_statement",
+    "scope_boundaries_non_goals",
 }
 _POSITIONING_LABELS = {
     "where_to_play": "Where do we play?",
