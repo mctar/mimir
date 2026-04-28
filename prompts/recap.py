@@ -102,18 +102,15 @@ After filtering, if a sub-question list is empty, return []. An empty list is pr
 to a fabricated or generic insight.
 
 Return ONLY valid JSON with this exact structure:
+Note: target_audience must contain one object per persona ACTUALLY discussed in the transcript.
+Each object has keys: persona (string), key_personas (string), pain_points (array of strings),
+not_our_target (string). If no personas discussed, return [].
+
 {
   "positioning": {
     "where_to_play": [],
     "who_target": [],
-    "target_audience": [
-      {
-        "persona": "CEO",
-        "key_personas": "Short description of who they are",
-        "pain_points": [],
-        "not_our_target": "What/who is not our target for this persona"
-      }
-    ],
+    "target_audience": [],
     "why_now": [],
     "why_us": []
   },
