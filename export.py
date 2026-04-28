@@ -477,16 +477,16 @@ def _fmt_recap_items(value) -> list[str]:
 _SKIP_RECAP_KEYS = {"schema_version", "transcript_stats"}
 _V3_STRUCTURED_KEYS = {
     "positioning", "value_proposition",
-    "positioning_statement", "scope_boundaries_non_goals",
+    "positioning_statements", "scope_boundaries_non_goals",
 }
 _POSITIONING_LABELS = {
-    "what_to_sell": "What to sell?",
+    "where_to_play": "Where do we play?",
+    "who_target": "Who we target?",
     "why_now": "Why now?",
-    "why_well_positioned": "Why are we well positioned?",
-    "to_whom": "To whom?",
+    "why_us": "Why us?",
 }
 _VP_LABELS = {
-    "what_we_do": "What do we do?",
+    "what_we_sell": "What we sell?",
     "how_we_do_it": "How do we do it?",
     "how_we_get_paid": "How do we get paid?",
 }
@@ -507,6 +507,22 @@ def _format_recap(recap: dict) -> str:
                 for item in items:
                     lines.append(f"    • {item}")
                 lines.append("")
+        target_audience = positioning.get("target_audience")
+        if target_audience:
+            lines.append("  [TARGET AUDIENCE]")
+            for persona_data in target_audience:
+                persona = persona_data.get("persona", "")
+                lines.append(f"    ── {persona} ──")
+                if persona_data.get("key_personas"):
+                    lines.append(f"      Key personas: {persona_data['key_personas']}")
+                pain_points = persona_data.get("pain_points")
+                if pain_points:
+                    pts = pain_points if isinstance(pain_points, list) else [pain_points]
+                    for p in pts:
+                        lines.append(f"      Pain point: {p}")
+                if persona_data.get("not_our_target"):
+                    lines.append(f"      Not our target: {persona_data['not_our_target']}")
+            lines.append("")
 
     value_prop = recap.get("value_proposition")
     if value_prop:
@@ -520,10 +536,16 @@ def _format_recap(recap: dict) -> str:
                     lines.append(f"    • {item}")
                 lines.append("")
 
-    pos_stmt = recap.get("positioning_statement")
-    if pos_stmt:
+    pos_stmts = recap.get("positioning_statements")
+    if pos_stmts:
+        stmts = pos_stmts if isinstance(pos_stmts, list) else [pos_stmts]
+        lines.append("=== POSITIONING STATEMENTS (3 ALTERNATIVES) ===")
+        for i, stmt in enumerate(stmts, 1):
+            lines.append(f'  [{i}] "{stmt}"')
+        lines.append("")
+    elif recap.get("positioning_statement"):
         lines.append("=== POSITIONING STATEMENT ===")
-        lines.append(f'"{pos_stmt}"')
+        lines.append(f'"{recap["positioning_statement"]}"')
         lines.append("")
 
     scope = recap.get("scope_boundaries_non_goals")
@@ -998,11 +1020,12 @@ Inspect each slide and evaluate the following criteria:
 4. AGENDA COVERAGE (informational only — never blocking)
    Note which of the following themes are present in the deck.
    Absence is expected if the topic has not yet been discussed in the live session.
-   Positioning: What we sell (Transform vs run; Asset/IP-led; Front/Core/Back) /
+   Positioning: Where do we play (Transform vs run; Asset/IP-led; Front/Core/Back) /
+     Who we target (CXO play; Customer tier; Archetypes) /
+     Target audience (per persona: CEO/COO/CFO/CHRO — key personas / pain points / not our target) /
      Why now (Market inflexion; IOPs momentum; Agentic operations) /
-     Why well positioned (Tri-pod; Orchestrator; Credibility) /
-     To Whom (CXO play; Customer tier; Archetypes) / Position statement
-   Value Prop: What we do (Value engine; E2E reinvention) /
+     Why us (Tri-pod; Orchestrator; Credibility) / Positioning statements (3 alternatives)
+   Value Prop: What we sell (Value engine; E2E reinvention) /
      How we do it (Deals anatomy; Capabilities aggregation) /
      What we get paid for (Value/Risks/Cash; Shared accountability)
    Targets & horizon / Priorities & orchestration / Scope & non-goals
