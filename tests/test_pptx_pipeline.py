@@ -745,7 +745,7 @@ def test_deck_spec_system_recap_content_rule():
     from prompts.slides import deck_spec_system
 
     system = deck_spec_system("CATALOG")
-    assert "REQUIRED if positioning_statement" in system
+    assert "REQUIRED if positioning_statements" in system
     assert "REQUIRED if scope_boundaries_non_goals" in system
 
 
