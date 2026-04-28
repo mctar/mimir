@@ -73,6 +73,26 @@ def test_create_session_stores_source_correctly(tmp_db):
     assert session["source"] == "live"
 
 
+def test_get_last_segment_info_returns_last(tmp_db):
+    """get_last_segment_info returns the highest-seq segment's seq and timestamp."""
+    sid = "ext-last"
+    _seed_external_session(sid, n_segments=3)
+    info = asyncio.run(db.get_last_segment_info(sid))
+    assert info is not None
+    assert info["seq"] == 3
+    assert info["timestamp"] == pytest.approx(1_000_002.0)
+
+
+def test_get_last_segment_info_none_for_empty(tmp_db):
+    """get_last_segment_info returns None when session has no segments."""
+    async def _go():
+        await db.create_session("empty-001", "Empty", source="external")
+        await db.end_session("empty-001")
+    asyncio.run(_go())
+    info = asyncio.run(db.get_last_segment_info("empty-001"))
+    assert info is None
+
+
 def test_append_empty_transcript_has_no_segments():
     """An empty text produces zero parts when split."""
     cleaned = _parse_transcript("   ")

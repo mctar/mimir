@@ -315,6 +315,16 @@ async def get_session_transcript(session_id: str) -> list[dict]:
     } for r in rows]
 
 
+async def get_last_segment_info(session_id: str) -> dict | None:
+    """Return {seq, timestamp} of the highest-seq final segment, or None if none exist."""
+    cursor = await _db.execute(
+        "SELECT seq, timestamp FROM segments WHERE session_id = ? AND is_partial = 0 ORDER BY seq DESC LIMIT 1",
+        (session_id,),
+    )
+    row = await cursor.fetchone()
+    return {"seq": row["seq"], "timestamp": row["timestamp"]} if row else None
+
+
 async def store_cleaned_segments(session_id: str, cleaned: list[dict]):
     """Store cleaned text for segments. Each item: {seq, cleaned_text}."""
     for item in cleaned:

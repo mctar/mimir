@@ -712,11 +712,11 @@ async def append_transcript(session_id: str, request: Request):
 
     parts = _split_segments(cleaned)
 
-    # Find continuation point by loading existing segments (sorted by seq)
-    existing = await db.get_session_transcript(session_id)
-    if existing:
-        last_seq = existing[-1]["seq"]
-        last_ts = existing[-1]["timestamp"]
+    # Find continuation point
+    last_info = await db.get_last_segment_info(session_id)
+    if last_info:
+        last_seq = last_info["seq"]
+        last_ts = last_info["timestamp"]
     else:
         last_seq = 0
         last_ts = session.get("created_at", time.time())
