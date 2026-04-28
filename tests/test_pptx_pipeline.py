@@ -588,45 +588,64 @@ def test_format_recap_v3():
         "schema_version": 3,
         "transcript_stats": {"duration_minutes": 90},
         "positioning": {
-            "what_to_sell": ["End-to-end reinvention"],
+            "where_to_play": ["End-to-end reinvention"],
+            "who_target": ["Global 2000 CEO"],
+            "target_audience": [
+                {
+                    "persona": "CEO",
+                    "key_personas": "Group CEO driving transformation",
+                    "pain_points": ["Cost reduction mandate", "Talent scarcity"],
+                    "not_our_target": "SME / mid-market accounts",
+                }
+            ],
             "why_now": ["Agentic operations"],
-            "why_well_positioned": ["Tri-pod"],
-            "to_whom": ["Global 2000 CEO"],
+            "why_us": ["Tri-pod"],
         },
         "value_proposition": {
-            "what_we_do": ["Design value engines"],
+            "what_we_sell": ["Design value engines"],
             "how_we_do_it": ["Connecting functions"],
             "how_we_get_paid": ["Value-based contracts"],
         },
-        "positioning_statement": "For Global 2000...",
+        "positioning_statements": [
+            "Capgemini owns the Run to prevent competitor lock-in.",
+            "The Tri-pod is the only model that combines Transformation, Industry, and Technology at scale.",
+            "Agentic operations is the next mandatory step — not an option.",
+        ],
         "scope_boundaries_non_goals": ["Not a functional pitch", "Not one-off"],
     }
     result = _format_recap(recap)
     # Section headers
     assert "=== POSITIONING ===" in result
     assert "=== VALUE PROPOSITION ===" in result
-    assert "=== POSITIONING STATEMENT ===" in result
+    assert "=== POSITIONING STATEMENTS (3 ALTERNATIVES) ===" in result
     assert "=== SCOPE / BOUNDARIES / NON-GOALS ===" in result
-    # Numbered sub-section headings (new format)
-    assert "[1] WHAT TO SELL?" in result
-    assert "[2] WHY NOW?" in result
-    assert "[3] WHY ARE WE WELL POSITIONED?" in result
-    assert "[4] TO WHOM?" in result
-    assert "[1] WHAT DO WE DO?" in result
+    # Numbered sub-section headings
+    assert "[1] WHERE DO WE PLAY?" in result
+    assert "[2] WHO WE TARGET?" in result
+    assert "[3] WHY NOW?" in result
+    assert "[4] WHY US?" in result
+    assert "[1] WHAT WE SELL?" in result
     assert "[2] HOW DO WE DO IT?" in result
     assert "[3] HOW DO WE GET PAID?" in result
+    # Target audience block
+    assert "[TARGET AUDIENCE]" in result
+    assert "── CEO ──" in result
+    assert "Group CEO driving transformation" in result
+    assert "Cost reduction mandate" in result
+    assert "SME / mid-market accounts" in result
     # Bullet items
     assert "    • End-to-end reinvention" in result
     assert "    • Agentic operations" in result
     assert "    • Design value engines" in result
-    # Positioning statement and scope untouched
-    assert "For Global 2000" in result
+    # Positioning statements (3 alternatives)
+    assert '[1] "Capgemini owns the Run' in result
+    assert '[2] "The Tri-pod' in result
+    assert '[3] "Agentic operations' in result
+    # Scope
     assert "Not a functional pitch" in result
     # Internal metadata must NOT appear
     assert "Schema Version" not in result
     assert "Transcript Stats" not in result
-    # Old flat format must NOT appear
-    assert "What to sell?" not in result  # replaced by uppercase numbered heading
 
 
 def test_format_recap_unknown_keys():
@@ -693,11 +712,13 @@ def test_build_user_prompt_recap_bullet_format():
     recap = {
         "schema_version": 3,
         "positioning": {
-            "what_to_sell": ["Transform-then-Run model", "Asset/IP-led services"],
+            "where_to_play": ["Transform-then-Run model", "Asset/IP-led services"],
+            "who_target": ["Global 2000 CEO"],
             "why_now": ["BPO contract renewal window"],
+            "why_us": ["Tri-pod"],
         },
         "value_proposition": {
-            "what_we_do": ["Design value engines"],
+            "what_we_sell": ["Design value engines"],
         },
     }
     prompt = _build_user_prompt(
@@ -707,13 +728,15 @@ def test_build_user_prompt_recap_bullet_format():
         current_deck_spec=None,
     )
     # New bullet format present
-    assert "[1] WHAT TO SELL?" in prompt
+    assert "[1] WHERE DO WE PLAY?" in prompt
     assert "    • Transform-then-Run model" in prompt
     assert "    • Asset/IP-led services" in prompt
-    assert "[2] WHY NOW?" in prompt
-    assert "[1] WHAT DO WE DO?" in prompt
+    assert "[2] WHO WE TARGET?" in prompt
+    assert "[3] WHY NOW?" in prompt
+    assert "[4] WHY US?" in prompt
+    assert "[1] WHAT WE SELL?" in prompt
     # Old flat format absent
-    assert "What to sell?" not in prompt
+    assert "Where do we play?" not in prompt
     assert "Transform-then-Run model; Asset/IP-led services" not in prompt
 
 
