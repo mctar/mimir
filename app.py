@@ -1135,9 +1135,11 @@ async def get_session_detail(session_id: str):
 async def generate_recap(session_id: str):
     """Generate an AI recap for a session (on-demand, server-side LLM call)."""
     log_activity("recap", session_id, "started")
+    logger.info(f"[recap] Starting recap generation for session {session_id}")
     segments = await db.get_session_transcript(session_id)
     if not segments:
         log_activity("recap", session_id, "error", "No transcript found")
+        logger.warning(f"[recap] No transcript found for session {session_id}")
         return JSONResponse({"error": "No transcript found"}, status_code=404)
 
     full_text = " ".join(seg.get("cleaned_text") or seg["text"] for seg in segments)
@@ -1159,11 +1161,16 @@ async def generate_recap(session_id: str):
         "total_chars": len(full_text),
         "duration_minutes": round(duration_minutes, 1),
     }
+    logger.info(
+        f"[recap] Transcript loaded: {len(segments)} segments, "
+        f"{len(full_text)} chars, {stats['duration_minutes']} min, lang={session_lang}"
+    )
 
     # Truncate if very long
     max_chars = 150000
     transcript_for_recap = full_text[:max_chars]
     if len(full_text) > max_chars:
+        logger.warning(f"[recap] Transcript truncated from {len(full_text)} to {max_chars} chars")
         transcript_for_recap += f"\n\n[Transcript truncated at {max_chars} chars out of {len(full_text)}]"
 
     system_prompt = BOARD_RECAP_SYSTEM
@@ -1173,15 +1180,19 @@ async def generate_recap(session_id: str):
     # Walk the LLM chain (hugin → gemini → anthropic) with JSON-parse retry
     max_attempts = 2
     raw_text = ""
+    chain_info = [(t["provider"], t["model"]) for t in _llm_chain] if _llm_chain else []
+    logger.info(f"[recap] Calling LLM chain: {chain_info} (max_tokens=8192, timeout=180s)")
     for attempt in range(max_attempts):
         prompt = user_prompt
         if attempt > 0:
+            logger.info(f"[recap] Retry attempt {attempt + 1}/{max_attempts} with strict JSON instruction")
             prompt += "\n\nIMPORTANT: Return ONLY the raw JSON object. No markdown, no explanation, no code fences."
         try:
             raw_text = await _qa_llm_call_chain(
                 system_prompt, [{"role": "user", "content": prompt}], _llm_chain,
-                max_tokens=4096, timeout_secs=180,
+                max_tokens=8192, timeout_secs=180,
             )
+            logger.info(f"[recap] LLM response received: {len(raw_text)} chars")
             # Strip markdown code fences if present
             cleaned = raw_text.strip()
             if cleaned.startswith("```"):
@@ -1196,9 +1207,10 @@ async def generate_recap(session_id: str):
             await db.store_recap(session_id, recap, served_model)
             log_activity("recap", session_id, "completed",
                          f"{len(segments)} segments, model={served_model}")
+            logger.info(f"[recap] Recap stored successfully for session {session_id} (model={served_model})")
             return JSONResponse({"recap": recap, "model": served_model, "created_at": time.time()})
         except json.JSONDecodeError as e:
-            logger.error(f"Recap JSON parse attempt {attempt + 1} failed: {e}")
+            logger.error(f"[recap] JSON parse attempt {attempt + 1}/{max_attempts} failed: {e} — raw preview: {raw_text[:200]!r}")
             if attempt < max_attempts - 1:
                 continue
             error_recap = {
@@ -1212,7 +1224,7 @@ async def generate_recap(session_id: str):
             log_activity("recap", session_id, "error", str(e))
             return JSONResponse({"error": f"Failed to parse LLM response: {e}"}, status_code=502)
         except Exception as e:
-            logger.error(f"Recap generation failed for session {session_id}: "
+            logger.error(f"[recap] Generation failed for session {session_id}: "
                          f"{type(e).__name__}: {e}")
             log_activity("recap", session_id, "error", str(e))
             return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)

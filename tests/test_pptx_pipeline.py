@@ -886,13 +886,22 @@ def test_pptx_to_thumbnails_returns_empty_when_no_soffice(monkeypatch):
 def test_pptx_to_thumbnails_sorted_by_slide_number(tmp_path):
     import export as exp
 
-    # Create fake PNG files with numeric suffixes
-    for name in ["deck3.png", "deck1.png", "deck10.png", "deck2.png"]:
+    # Create fake PNG files with numeric suffixes (simulating pdftoppm output)
+    for name in ["slide-3.png", "slide-1.png", "slide-10.png", "slide-2.png"]:
         (tmp_path / name).write_bytes(b"fake")
 
-    # Patch _soffice_path and subprocess.run to succeed without actually running soffice
+    # Simulate pdftoppm path: soffice creates a PDF in pdf_dir, pdftoppm emits PNGs already
+    # in tmp_path. We mock shutil.which to return pdftoppm, create the fake PDF, and mock
+    # both subprocess.run calls so no real processes are spawned.
+    import os
     from unittest import mock
+
+    pdf_dir = tmp_path / "pdf"
+    pdf_dir.mkdir()
+    (pdf_dir / "deck.pdf").write_bytes(b"fake pdf")
+
     with mock.patch.object(exp, "_soffice_path", return_value="/usr/bin/soffice"), \
+         mock.patch.object(exp.shutil, "which", return_value="/usr/bin/pdftoppm"), \
          mock.patch("subprocess.run", return_value=mock.Mock(returncode=0)):
         result = exp._pptx_to_thumbnails("/fake/deck.pptx", str(tmp_path))
 
