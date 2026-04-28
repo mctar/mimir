@@ -3261,7 +3261,57 @@ function buildMarkdown() {
 
   if (current.recap) {
     const r = current.recap.recap;
-    if (r.schema_version === 2) {
+    if (r.schema_version === 3) {
+      // V3 recap \u2014 Day 1 positioning framework
+      const pos = r.positioning || {};
+      const vp = r.value_proposition || {};
+
+      md += `## Positioning\n\n`;
+
+      function bulletList(items) {
+        return (items && items.length) ? items.map(b => `- ${b}`).join('\n') + '\n' : '_Not discussed._\n';
+      }
+
+      md += `### Where do we play?\n\n${bulletList(pos.where_to_play)}\n`;
+      md += `### Who we target?\n\n${bulletList(pos.who_target)}\n`;
+
+      const targetAudience = pos.target_audience || [];
+      if (targetAudience.length) {
+        md += `### Target Audience\n\n`;
+        targetAudience.forEach(p => {
+          md += `**${p.persona || ''}**\n`;
+          if (p.key_personas) md += `- Key personas: ${p.key_personas}\n`;
+          if (p.pain_points && p.pain_points.length) {
+            md += `- Pain points:\n`;
+            (Array.isArray(p.pain_points) ? p.pain_points : [p.pain_points]).forEach(x => { md += `  - ${x}\n`; });
+          }
+          if (p.not_our_target) md += `- Not our target: ${p.not_our_target}\n`;
+          md += `\n`;
+        });
+      }
+
+      md += `### Why now?\n\n${bulletList(pos.why_now)}\n`;
+      md += `### Why us?\n\n${bulletList(pos.why_us)}\n`;
+
+      const posStmts = r.positioning_statements || [];
+      if (posStmts.length) {
+        md += `### Positioning Statements\n\n`;
+        posStmts.forEach((s, i) => { md += `${i + 1}. "${s}"\n`; });
+        md += `\n`;
+      }
+
+      md += `## Value Proposition\n\n`;
+      md += `### What we sell?\n\n${bulletList(vp.what_we_sell)}\n`;
+      md += `### How do we do it?\n\n${bulletList(vp.how_we_do_it)}\n`;
+      md += `### How do we get paid?\n\n${bulletList(vp.how_we_get_paid)}\n`;
+
+      const scope = r.scope_boundaries_non_goals || [];
+      if (scope.length) {
+        md += `## Scope / Boundaries / Non-Goals\n\n`;
+        scope.forEach(s => { md += `- ${s}\n`; });
+        md += `\n`;
+      }
+    } else if (r.schema_version === 2) {
       // V2 recap
       if (r.elevator_pitch) { md += `## Elevator Pitch\n\n${r.elevator_pitch}\n\n`; }
       if (r.retain && r.retain.length) {
