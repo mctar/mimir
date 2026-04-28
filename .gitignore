@@ -44,3 +44,6 @@ docs/design/
 
 # Superpowers
 .superpowers/
+
+# Git worktrees
+.worktrees/
